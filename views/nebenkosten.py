@@ -1,4 +1,3 @@
-# views/nebenkosten.py
 import streamlit as st
 import pandas as pd
 import time
@@ -6,6 +5,8 @@ from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand
 from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
+from utils.drive_sync import upload_db 
+from utils.pdf_generator import generate_kontoauszug_pdf  # <-- NEU
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -28,6 +29,7 @@ def handle_confirm(id, status):
         conn.execute("UPDATE transaktionen SET status=? WHERE id=?", (new_status, id))
     conn.commit()
     conn.close()
+    upload_db() 
     st.rerun()
 
 def handle_delete(id):
@@ -41,17 +43,25 @@ def handle_delete(id):
         conn.execute("DELETE FROM transaktionen WHERE id=?", (id,))
     conn.commit()
     conn.close()
+    upload_db() 
     st.rerun()
 
 def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
     conn = get_connection()
+    # Jahres-Filter abfangen: Startbestand des Jahres ist alles VOR dem Januar dieses Jahres
+    if aktueller_monat_str.endswith("-ALL"):
+        jahr = aktueller_monat_str.split("-")[0]
+        vergleichs_monat = f"{jahr}-01"
+    else:
+        vergleichs_monat = aktueller_monat_str
+
     start_row = conn.execute("SELECT monat, betrag FROM anfangsbestaende WHERE konto=? ORDER BY monat ASC LIMIT 1", (konto_name,)).fetchone()
     base_monat = start_row[0] if start_row else '2000-01'
     base_betrag = start_row[1] if start_row else 0.0
     
     df_vormonate = pd.read_sql(
         f"SELECT SUM(betrag) as total FROM transaktionen "
-        f"WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat < '{aktueller_monat_str}' AND status='bestätigt'", 
+        f"WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat < '{vergleichs_monat}' AND status='bestätigt'", 
         conn
     )
     conn.close()
@@ -63,7 +73,9 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
 
     if st.session_state.view == 'dashboard':
         st.title("🛒 Nebenkosten Übersicht")
-        st.caption(f"Zeitraum: {ausgewaehlter_monat_name} {ausgewaehltes_jahr}")
+        # Text-Anpassung bei Jahres-Auswahl
+        zeitraum_label = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
+        st.caption(f"Zeitraum: {zeitraum_label}")
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         
         for i in range(0, len(NEBENKOSTEN_KONTEN), 3):
@@ -73,13 +85,109 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
                 with spalten[j]:
                     render_bank_kachel(k_name, globaler_monat, show_button=True)
 
+        st.markdown("<div style='height: 35px;'></div>", unsafe_allow_html=True)
+        st.divider()
+        st.subheader(f"📊 Gesamtübersicht aller Nebenkosten-Töpfe ({zeitraum_label})")
+        st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+
+        total_startbestand = 0.0
+        total_geplant_endsaldo = 0.0
+        total_aktueller_saldo = 0.0
+
+        conn = get_connection()
+        for k_name in NEBENKOSTEN_KONTEN:
+            startbestand = get_startbestand_bis_vormonat(k_name, globaler_monat)
+            total_startbestand += startbestand
+            
+            start_row = conn.execute("SELECT monat, betrag FROM anfangsbestaende WHERE konto=? ORDER BY monat ASC LIMIT 1", (k_name,)).fetchone()
+            base_monat = start_row[0] if start_row else '2000-01'
+            base_betrag = start_row[1] if start_row else 0.0
+            
+            # Dynamischer SQL-Filter für das ganze Jahr (LIKE '2026-%') oder Monat (= '2026-06')
+            if globaler_monat.endswith("-ALL"):
+                tx_query = f"SELECT betrag, status FROM transaktionen WHERE konto='{k_name}' AND monat >= '{base_monat}' AND monat LIKE '{ausgewaehltes_jahr}-%'"
+            else:
+                tx_query = f"SELECT betrag, status FROM transaktionen WHERE konto='{k_name}' AND monat >= '{base_monat}' AND monat <= '{globaler_monat}'"
+                
+            df_all = pd.read_sql(tx_query, conn)
+            
+            if not df_all.empty:
+                aktuell_tx = df_all[df_all['status'] == 'bestätigt']['betrag'].sum()
+                geplant_tx = df_all['betrag'].sum()
+            else:
+                aktuell_tx, geplant_tx = 0.0, 0.0
+                
+            total_aktueller_saldo += (base_betrag + aktuell_tx)
+            total_geplant_endsaldo += (base_betrag + geplant_tx)
+            
+        col_tot1, col_tot2, col_tot3 = st.columns(3)
+        col_tot1.metric("Gesamter Startbestand", f"{total_startbestand:,.2f} CHF")
+        col_tot2.metric("Gesamter Geplanter Endsaldo", f"{total_geplant_endsaldo:,.2f} CHF")
+        col_tot3.metric("Gesamter Aktueller Saldo (Ist-Stand)", f"{total_aktueller_saldo:,.2f} CHF")
+
+        # --- BUDGET PLANNING BLOCKED FOR WHOLE YEAR ---
+        st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True)
+        with st.expander("📝 Budget-Planung (Sparplan für deine Töpfe)"):
+            if globaler_monat.endswith("-ALL"):
+                st.info("Wähle einen spezifischen Monat in der Sidebar, um die Budget-Planung zu bearbeiten.")
+            else:
+                st.markdown("Erfasse hier deine wiederkehrenden jährlichen Ausgaben. Das System berechnet dir automatisch deinen monatlichen Sparbedarf pro Topf.")
+                
+                with st.form("budget_form", border=True):
+                    c1, c2, c3 = st.columns([2, 1, 1])
+                    b_desc = c1.text_input("Ausgabe (z.B. Autoversicherung, Steuern)")
+                    b_topf = c2.selectbox("Zuweisen zu Topf", NEBENKOSTEN_KONTEN)
+                    b_betrag = c3.number_input("Kosten pro Jahr (CHF)", min_value=0.0, step=50.0, format="%.2f")
+                    
+                    if st.form_submit_button("Budget-Position保存"):
+                        if b_desc and b_betrag > 0:
+                            conn.execute("INSERT INTO budget_nebenkosten (beschreibung, betrag_jaehrlich, konto) VALUES (?,?,?)", (b_desc, b_betrag, b_topf))
+                            conn.commit()
+                            upload_db()
+                            st.success("Erfolgreich hinzugefügt!")
+                            time.sleep(0.5)
+                            st.rerun()
+
+                df_budget = pd.read_sql("SELECT * FROM budget_nebenkosten ORDER BY konto, beschreibung", conn)
+                
+                if not df_budget.empty:
+                    st.markdown("### Erfasste Ausgaben")
+                    for _, row in df_budget.iterrows():
+                        col_t1, col_t2, col_t3, col_t4 = st.columns([3, 2, 2, 1])
+                        col_t1.write(f"**{row['beschreibung']}**")
+                        col_t2.write(f"Topf: {row['konto']}")
+                        col_t3.write(f"{row['betrag_jaehrlich']:,.2f} CHF / Jahr")
+                        
+                        if col_t4.button("🗑️ Löschen", key=f"del_bud_{row['id']}"):
+                            conn.execute("DELETE FROM budget_nebenkosten WHERE id=?", (row['id'],))
+                            conn.commit()
+                            upload_db()
+                            st.rerun()
+                    
+                    st.divider()
+                    st.markdown("### 🎯 Dein monatlicher Sparplan")
+                    summary = df_budget.groupby('konto')['betrag_jaehrlich'].sum().reset_index()
+                    sum_cols = st.columns(3)
+                    col_idx = 0
+                    for _, s_row in summary.iterrows():
+                        topf = s_row['konto']
+                        j_sum = s_row['betrag_jaehrlich']
+                        m_sum = j_sum / 12
+                        with sum_cols[col_idx % 3]:
+                            st.info(f"**{topf}**\n\nZiel: **{m_sum:,.2f} CHF / Monat**\n\n*(Total: {j_sum:,.2f} CHF/Jahr)*")
+                        col_idx += 1
+                else:
+                    st.info("Noch keine Ausgaben für das Budget erfasst.")
+        conn.close()
+
     elif st.session_state.view == 'lohn_details':
         konto_name = st.session_state.selected_konto
-        if konto_name not in NEBENKOSTEN_KONTEN:
-            return
+        if konto_name not in NEBENKOSTEN_KONTEN: return
             
+        zeitraum_text = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
+        
         st.title(f"Cockpit: {konto_name}")
-        st.caption(f"📅 Filter aktiv: {ausgewaehlter_monat_name} {ausgewaehltes_jahr}")
+        st.caption(f"📅 Filter aktiv: {zeitraum_text}")
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
 
         with st.expander("➕ Neue Transaktion erfassen"):
@@ -100,8 +208,6 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
 
                 if st.form_submit_button("Buchung speichern"):
                     datum_str = txn_datum.strftime("%Y-%m-%d")
-                    
-                    # --- FIX: Nutzt das ausgewählte Datum für den Zielmonat ---
                     txn_jahr = txn_datum.year
                     txn_monat_num = txn_datum.month
                     
@@ -124,29 +230,45 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
                                          (konto_name, typ, val, desc, datum_str, z_monat, "geplant", modus, ""))
                     conn.commit()
                     conn.close()
+                    upload_db() 
                     st.rerun()
 
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        st.subheader(f"Buchungen im {ausgewaehlter_monat_name}")
+        st.subheader(f"Buchungen im {zeitraum_text}")
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
         
+        # SQL Abfrage für Tabelle anpassen (LIKE für das ganze Jahr, sonst EQUAL)
         conn = get_connection()
-        df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat='{globaler_monat}' ORDER BY datum DESC", conn)
+        if globaler_monat.endswith("-ALL"):
+            df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat LIKE '{ausgewaehltes_jahr}-%' ORDER BY datum DESC", conn)
+        else:
+            df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat='{globaler_monat}' ORDER BY datum DESC", conn)
+        
+        start_row = conn.execute("SELECT monat, betrag FROM anfangsbestaende WHERE konto=? ORDER BY monat ASC LIMIT 1", (konto_name,)).fetchone()
+        base_monat = start_row[0] if start_row else '2000-01'
+        base_betrag = start_row[1] if start_row else 0.0
+        
+        if globaler_monat.endswith("-ALL"):
+            df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat LIKE '{ausgewaehltes_jahr}-%'", conn)
+        else:
+            df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat <= '{globaler_monat}'", conn)
         conn.close()
         
         startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
-        summe_monat_geplant = df['betrag'].sum()
-        summe_monat_aktuell = df[df['status'] == 'bestätigt']['betrag'].sum()
         
-        summe_geplant = startbestand_anzeige + summe_monat_geplant
-        summe_aktuell = startbestand_anzeige + summe_monat_aktuell
+        if not df_all.empty:
+            summe_aktuell = base_betrag + df_all[df_all['status'] == 'bestätigt']['betrag'].sum()
+            summe_geplant = base_betrag + df_all['betrag'].sum()
+        else:
+            summe_aktuell = base_betrag
+            summe_geplant = base_betrag
 
         if not df.empty:
             render_table_header()
             for _, row in df.iterrows(): 
                 render_transaction_row(row, handle_confirm, handle_delete)
         else:
-            st.info("In diesem Monat sind für dieses Konto keine direkten Buchungen vorhanden.")
+            st.info("In diesem Zeitraum sind für dieses Konto keine direkten Buchungen vorhanden.")
             
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         st.divider()
@@ -157,6 +279,30 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
         col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        if st.button("← Zurück"):
-            st.session_state.view = 'dashboard'
-            st.rerun()
+        
+        # =====================================================================
+        # --- NEU: PDF DOWNLOAD BUTTON NEBEN DEM ZURÜCK-BUTTON ---
+        # =====================================================================
+        btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
+        with btn_col1:
+            if st.button("← Zurück", use_container_width=True):
+                st.session_state.view = 'dashboard'
+                st.rerun()
+        with btn_col2:
+            # PDF live generieren bei Klick
+            pdf_data = generate_kontoauszug_pdf(
+                konto_name=konto_name,
+                zeitraum_text=zeitraum_text,
+                df_transactions=df,
+                startbestand=startbestand_anzeige,
+                endsaldo_geplant=summe_geplant,
+                endsaldo_aktuell=summe_aktuell
+            )
+            
+            st.download_button(
+                label="📄 Kontoauszug als PDF herunterladen",
+                data=pdf_data,
+                file_name=f"Kontoauszug_{konto_name.replace(' ', '_')}_{zeitraum_text.replace(' ', '_')}.pdf",
+                mime="application/pdf"
+            )
+        # =====================================================================
