@@ -1,18 +1,20 @@
 import streamlit as st
 from datetime import datetime
-import os  # <-- DIESE ZEILE HAT GEFEHLT UND BEHEBT DEN NAME-ERROR
+import os
 
-# --- 1. DATENBANK-SYNC BEIM START ---
+# --- 1. DATENBANK-SYNC BEIM START (NUR EINMALIG!) ---
 from utils.drive_sync import download_db, upload_db
 
-# Holt die finanzen.db aus dem Drive und überschreibt die lokale
-versuch = download_db()
-if versuch == False:
-    st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
-else:
-    st.success("Datenbank erfolgreich von Google Drive geladen!")
+# Verwende den Session State, damit der Download NUR BEIM ERSTEN START läuft
+if "db_initial_loaded" not in st.session_state:
+    with st.spinner("Lade aktuellsten Stand aus Google Drive..."):
+        versuch = download_db()
+        if versuch == False:
+            st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
+        else:
+            st.session_state["db_initial_loaded"] = True
 
-# Datenbank initialisieren
+# Datenbank initialisieren (Nutzt ab jetzt die lokale Datei)
 from db_manager import init_db, get_connection
 init_db()
 
@@ -37,7 +39,6 @@ if 'view' not in st.session_state:
 
 # --- 3. LOGIN GATE ---
 if not st.session_state["auth"]:
-    # Design zentriert, ohne Logo
     st.markdown("""
         <style>
             header {visibility: hidden;}
@@ -130,7 +131,7 @@ with st.sidebar:
                 use_container_width=True
             )
     
-    # Sync Button (Jetzt mit echter Funktion verknüpft!)
+    # Sync Button
     if st.button("🔄 Sync zu Google Drive", use_container_width=True):
         with st.spinner("Synchronisiere mit Google Drive..."):
             erfolg = upload_db()
