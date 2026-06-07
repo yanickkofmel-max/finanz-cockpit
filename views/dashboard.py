@@ -1,4 +1,3 @@
-# views/dashboard.py
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -7,6 +6,8 @@ from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand
 from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
+from utils.drive_sync import upload_db 
+from utils.pdf_generator import generate_kontoauszug_pdf
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -29,6 +30,7 @@ def handle_confirm(id, status):
         conn.execute("UPDATE transaktionen SET status=? WHERE id=?", (new_status, id))
     conn.commit()
     conn.close()
+    upload_db()
     st.rerun()
 
 def handle_delete(id):
@@ -42,27 +44,36 @@ def handle_delete(id):
         conn.execute("DELETE FROM transaktionen WHERE id=?", (id,))
     conn.commit()
     conn.close()
+    upload_db()
     st.rerun()
 
 def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
     conn = get_connection()
+    if aktueller_monat_str.endswith("-ALL"):
+        jahr = aktueller_monat_str.split("-")[0]
+        vergleichs_monat = f"{jahr}-01"
+    else:
+        vergleichs_monat = aktueller_monat_str
+
     start_row = conn.execute("SELECT monat, betrag FROM anfangsbestaende WHERE konto=? ORDER BY monat ASC LIMIT 1", (konto_name,)).fetchone()
     base_monat = start_row[0] if start_row else '2000-01'
     base_betrag = start_row[1] if start_row else 0.0
     
     df_vormonate = pd.read_sql(
         f"SELECT SUM(betrag) as total FROM transaktionen "
-        f"WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat < '{aktueller_monat_str}' AND status='bestätigt'", 
+        f"WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat < '{vergleichs_monat}' AND status='bestätigt'", 
         conn
     )
     conn.close()
     return base_betrag + (df_vormonate['total'].iloc[0] or 0.0)
 
 def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat):
+    zeitraum_text = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
+
     # --- ANSICHT 1: DAS HAUPT-DASHBOARD ---
     if st.session_state.view == 'dashboard':
         st.title("Dashboard")
-        st.caption(f"📊 Finanz-Gesamtübersicht für {ausgewaehlter_monat_name} {ausgewaehltes_jahr}")
+        st.caption(f"📊 Finanz-Gesamtübersicht für {zeitraum_text}")
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
         
         lohn_konten = get_konten_von_db("Lohnkonto")
@@ -100,7 +111,7 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                 df_chart = pd.DataFrame(chart_data)
                 with st.container(border=True):
                     st.markdown("#### 🍩 Vermögensaufteilung (Effektiv verbucht)")
-                    st.caption("Visuelle Übersicht über die prozentuale Verteilung deines effektiv bestätigten Gesamtvermögens bis zum gewählten Monat.")
+                    st.caption("Visuelle Übersicht über die prozentuale Verteilung deines effektiv bestätigten Gesamtvermögens.")
                     st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
                     
                     fig = px.pie(
@@ -115,17 +126,14 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                     )
                     st.plotly_chart(fig, use_container_width=True)
             else:
-                st.info("Noch kein positives, effektiv verbuchtes Vermögen für die Diagramm-Anzeige in diesem Monat vorhanden.")
+                st.info("Noch kein positives, effektiv verbuchtes Vermögen für die Diagramm-Anzeige in diesem Zeitraum vorhanden.")
 
     # --- ANSICHT 2: COCKPIT-DETAILS ---
     elif st.session_state.view == 'lohn_details':
         konto_name = st.session_state.selected_konto
         st.title(f"Cockpit: {konto_name}")
-        st.caption(f"📅 Filter aktiv: {ausgewaehlter_monat_name} {ausgewaehltes_jahr}")
+        st.caption(f"📅 Filter aktiv: {zeitraum_text}")
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        
-        akt_bestand = get_anfangsbestand(konto_name, globaler_monat)
-        neuer_bestand = akt_bestand
         
         conn = get_connection()
         typ_res = conn.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
@@ -133,101 +141,106 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         conn.close()
         
         is_lohn = (k_typ == "Lohnkonto")
-        
-        if is_lohn:
-            with st.container(border=True):
-                st.markdown("#### 🏦 Kontostand verwalten")
-                st.caption("Lege hier den Startsaldo für den ausgewählten Monat fest.")
-                col_content, col_spacer = st.columns([3, 5])
-                with col_content:
-                    neuer_bestand = st.number_input(
-                        "Anfangsbestand (CHF)", value=float(akt_bestand), step=100.0, format="%.2f",
-                        key=f"anfang_dash_{konto_name}_{globaler_monat}"
-                    )
-                    st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
-                    if st.button("💾 Speichern", key=f"btn_dash_{konto_name}_{globaler_monat}", use_container_width=True):
-                        from db_manager import set_anfangsbestand
-                        set_anfangsbestand(konto_name, globaler_monat, neuer_bestand)
-                        st.success("Gespeichert!")
-                        time.sleep(0.5)
-                        st.rerun()
-            st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
+        neuer_bestand = 0.0
 
-        with st.expander("➕ Neue Transaktion erfassen"):
-            typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
-            with st.form("add_txn_dash"):
-                c1, c2 = st.columns(2)
-                betrag = c1.number_input("Betrag", min_value=0.0)
-                txn_datum = c1.date_input("Buchungsdatum", datetime.now())
-                desc = c2.text_input("Beschreibung / Zweck")
-                modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
-                
-                alle_konten_list = get_konten_von_db()
-                von_konto, nach_konto = None, None
-                if typ == "Übertrag (Umbuchung)":
-                    st.markdown("---")
-                    c3, c4 = st.columns(2)
-                    von_konto = c3.selectbox("Von Konto", alle_konten_list, index=alle_konten_list.index(konto_name))
-                    nach_konto = c4.selectbox("Nach Konto", [k for k in alle_konten_list if k != von_konto])
+        if globaler_monat.endswith("-ALL"):
+            st.info("💡 Um den Startbestand zu verwalten oder neue Buchungen zu erfassen, wähle bitte links in der Sidebar einen spezifischen Monat aus.")
+        else:
+            akt_bestand = get_anfangsbestand(konto_name, globaler_monat)
+            neuer_bestand = akt_bestand
+            
+            if is_lohn:
+                with st.container(border=True):
+                    st.markdown("#### 🏦 Kontostand verwalten")
+                    st.caption("Lege hier den Startsaldo für den ausgewählten Monat fest.")
+                    col_content, col_spacer = st.columns([3, 5])
+                    with col_content:
+                        neuer_bestand = st.number_input(
+                            "Anfangsbestand (CHF)", value=float(akt_bestand), step=100.0, format="%.2f",
+                            key=f"anfang_dash_{konto_name}_{globaler_monat}"
+                        )
+                        st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+                        if st.button("💾 Speichern", key=f"btn_dash_{konto_name}_{globaler_monat}", use_container_width=True):
+                            from db_manager import set_anfangsbestand
+                            set_anfangsbestand(konto_name, globaler_monat, neuer_bestand)
+                            upload_db()
+                            st.success("Gespeichert!")
+                            time.sleep(0.5)
+                            st.rerun()
+                st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
-                if st.form_submit_button("Buchung speichern"):
-                    datum_str = txn_datum.strftime("%Y-%m-%d")
+            with st.expander("➕ Neue Transaktion erfassen"):
+                typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
+                with st.form("add_txn_dash"):
+                    c1, c2 = st.columns(2)
+                    betrag = c1.number_input("Betrag", min_value=0.0)
+                    txn_datum = c1.date_input("Buchungsdatum", datetime.now())
+                    desc = c2.text_input("Beschreibung / Zweck")
+                    modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
                     
-                    # --- DIE KORREKTUR STARTET HIER ---
-                    txn_jahr = txn_datum.year
-                    txn_monat_num = txn_datum.month
-                    
-                    if modus == "Dauerauftrag (bis Jahresende)":
-                        ziel_monate = [f"{txn_jahr}-{m_num:02}" for m_num in range(txn_monat_num, 13)]
-                    else:
-                        ziel_monate = [f"{txn_jahr}-{txn_monat_num:02}"]
-                    # --- DIE KORREKTUR ENDET HIER ---
-                    
-                    conn = get_connection()
-                    for z_monat in ziel_monate:
-                        if typ == "Übertrag (Umbuchung)":
-                            link = f"TR-{z_monat}-{int(time.time()*1000)}"
-                            conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                         (von_konto, "Belastung", -betrag, f"Übertrag an {nach_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
-                            conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                         (nach_konto, "Gutschrift", betrag, f"Übertrag von {von_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                    alle_konten_list = get_konten_von_db()
+                    von_konto, nach_konto = None, None
+                    if typ == "Übertrag (Umbuchung)":
+                        st.markdown("---")
+                        c3, c4 = st.columns(2)
+                        von_konto = c3.selectbox("Von Konto", alle_konten_list, index=alle_konten_list.index(konto_name))
+                        nach_konto = c4.selectbox("Nach Konto", [k for k in alle_konten_list if k != von_konto])
+
+                    if st.form_submit_button("Buchung speichern"):
+                        datum_str = txn_datum.strftime("%Y-%m-%d")
+                        txn_jahr = txn_datum.year
+                        txn_monat_num = txn_datum.month
+                        
+                        if modus == "Dauerauftrag (bis Jahresende)":
+                            ziel_monate = [f"{txn_jahr}-{m_num:02}" for m_num in range(txn_monat_num, 13)]
                         else:
-                            val = -betrag if typ == "Belastung" else betrag
-                            conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                         (konto_name, typ, val, desc, datum_str, z_monat, "geplant", modus, ""))
-                    conn.commit()
-                    conn.close()
-                    st.rerun()
+                            ziel_monate = [f"{txn_jahr}-{txn_monat_num:02}"]
+                        
+                        conn = get_connection()
+                        for z_monat in ziel_monate:
+                            if typ == "Übertrag (Umbuchung)":
+                                link = f"TR-{z_monat}-{int(time.time()*1000)}"
+                                conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                                             (von_konto, "Belastung", -betrag, f"Übertrag an {nach_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                                             (nach_konto, "Gutschrift", betrag, f"Übertrag von {von_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                            else:
+                                val = -betrag if typ == "Belastung" else betrag
+                                conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
+                                             (konto_name, typ, val, desc, datum_str, z_monat, "geplant", modus, ""))
+                        conn.commit()
+                        conn.close()
+                        upload_db()
+                        st.rerun()
 
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        st.subheader(f"Buchungen im {ausgewaehlter_monat_name}")
+        st.subheader(f"Buchungen im {zeitraum_text}")
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
         
         conn = get_connection()
-        df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat='{globaler_monat}' ORDER BY datum DESC", conn)
+        if globaler_monat.endswith("-ALL"):
+            df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat LIKE '{ausgewaehltes_jahr}-%' ORDER BY datum DESC", conn)
+            startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
+        else:
+            df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat='{globaler_monat}' ORDER BY datum DESC", conn)
+            if k_typ in ["Vermögen", "Nebenkosten"]:
+                startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
+            else:
+                startbestand_anzeige = neuer_bestand
         conn.close()
         
-        if k_typ in ["Vermögen", "Nebenkosten"]:
-            startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
-            summe_monat_geplant = df['betrag'].sum()
-            summe_monat_aktuell = df[df['status'] == 'bestätigt']['betrag'].sum()
-            
-            summe_geplant = startbestand_anzeige + summe_monat_geplant
-            summe_aktuell = startbestand_anzeige + summe_monat_aktuell
-        else:
-            summe_monat_geplant = df['betrag'].sum()
-            summe_monat_aktuell = df[df['status'] == 'bestätigt']['betrag'].sum()
-            
-            startbestand_anzeige = neuer_bestand
-            summe_geplant = startbestand_anzeige + summe_monat_geplant
-            summe_aktuell = startbestand_anzeige + summe_monat_aktuell
+        summe_monat_geplant = df['betrag'].sum() if not df.empty else 0.0
+        summe_monat_aktuell = df[df['status'] == 'bestätigt']['betrag'].sum() if not df.empty else 0.0
+        
+        summe_geplant = startbestand_anzeige + summe_monat_geplant
+        summe_aktuell = startbestand_anzeige + summe_monat_aktuell
 
         if not df.empty:
             render_table_header()
             for _, row in df.iterrows(): 
                 render_transaction_row(row, handle_confirm, handle_delete)
         else:
-            st.info("In diesem Monat sind für dieses Konto keine direkten Buchungen vorhanden.")
+            st.info("In diesem Zeitraum sind für dieses Konto keine direkten Buchungen vorhanden.")
             
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
         st.divider()
@@ -238,6 +251,27 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
-        if st.button("← Zurück", key="btn_back_dash"):
-            st.session_state.view = 'dashboard'
-            st.rerun()
+        
+        # --- PDF & ZURÜCK BUTTONS (NEU ALIGNIERT) ---
+        btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
+        with btn_col1:
+            if st.button("← Zurück", key="btn_back_dash", use_container_width=True):
+                st.session_state.view = 'dashboard'
+                st.rerun()
+        with btn_col2:
+            pdf_data = generate_kontoauszug_pdf(
+                konto_name=konto_name,
+                zeitraum_text=zeitraum_text,
+                df_transactions=df,
+                startbestand=startbestand_anzeige,
+                endsaldo_geplant=summe_geplant,
+                endsaldo_aktuell=summe_aktuell
+            )
+            
+            st.download_button(
+                label="📄 Kontoauszug als PDF herunterladen",
+                data=pdf_data,
+                file_name=f"Kontoauszug_{konto_name.replace(' ', '_')}_{zeitraum_text.replace(' ', '_')}.pdf",
+                mime="application/pdf",
+                key="btn_pdf_dash"
+            )
