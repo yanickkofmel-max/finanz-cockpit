@@ -2,6 +2,9 @@ import streamlit as st
 from datetime import datetime
 import os
 
+# --- 0. BASIS-KONFIGURATION (Muss zwingend als allererstes stehen!) ---
+st.set_page_config(layout="wide", page_title="Finanz-Cockpit")
+
 # --- 1. DATENBANK-SYNC BEIM START (NUR EINMALIG!) ---
 from utils.drive_sync import download_db, upload_db
 
@@ -29,39 +32,128 @@ from views.vermoegen import show_vermoegen
 from views.konten_verwaltung import show_konten_verwaltung
 from views.nebenkosten import show_nebenkosten
 
-# --- 2. SETUP & SESSION STATE ---
-st.set_page_config(layout="wide", page_title="Finanz-Cockpit")
-
+# --- 2. SESSION STATES INITIALISIEREN ---
 if "auth" not in st.session_state: 
     st.session_state["auth"] = False
 if 'view' not in st.session_state: 
     st.session_state.view = 'dashboard'
 
-# --- 3. LOGIN GATE ---
+# --- 3. MODERNES LOGIN GATE (Design übernommen & angepasst, ohne Logo) ---
 if not st.session_state["auth"]:
     st.markdown("""
         <style>
+            /* 1. FLEXIBLER HINTERGRUND (Wechselt automatisch bei Light/Dark Mode) */
+            .stApp {
+                background-color: var(--background-color);
+            }
+            
             header {visibility: hidden;}
+            
             .main .block-container {
                 display: flex;
                 flex-direction: column;
                 justify-content: center;
                 align-items: center;
-                height: 70vh;
+                height: 100vh;
+                padding-top: 0rem !important;
+            }
+
+            .login-section {
+                width: 320px !important;
+                text-align: center;
+            }
+
+            /* 2. TEXTFARBEN ANPASSEN */
+            .brand-title {
+                font-family: 'Inter', sans-serif;
+                color: var(--text-color);
+                font-size: 42px;
+                font-weight: 800;
+                margin-top: 15px;
+                letter-spacing: -1px;
+            }
+
+            .brand-subtitle {
+                color: #58a6ff; 
+                font-size: 18px;
+                font-weight: 400;
+                margin-bottom: 40px;
+                letter-spacing: 2px;
+                text-transform: uppercase;
+            }
+
+            /* 3. MINIMALISTISCHE EINGABEFELDER (Unterstrich statt Rahmen) */
+            div[data-baseweb="input"] {
+                background-color: transparent !important;
+                border: none !important;
+                border-bottom: 2px solid var(--secondary-background-color) !important;
+                border-radius: 0px !important;
+                padding: 0px !important;
+            }
+            
+            div[data-baseweb="input"]:focus-within {
+                border-bottom: 2px solid #58a6ff !important;
+            }
+            
+            input {
+                color: var(--text-color) !important;
+                font-size: 18px !important;
+                text-align: left !important;
+                padding-left: 5px !important;
+            }
+
+            input::placeholder {
+                color: var(--text-color);
+                opacity: 0.5;
+            }
+
+            button[aria-label="Show password"] svg {
+                fill: var(--text-color) !important;
+            }
+
+            /* GRÜNER ANMELDE-BUTTON */
+            button[kind="primaryFormSubmit"] {
+                background-color: #238636 !important;
+                border: none !important;
+                border-radius: 6px !important;
+                color: white !important;
+                height: 45px !important;
+                width: 100% !important;
+                margin-top: 40px !important;
+                font-weight: 600 !important;
+            }
+            
+            div[data-testid="stWidgetLabel"] {
+                display: none !important;
+            }
+
+            .stForm {
+                border: none !important;
+                padding: 0 !important;
             }
         </style>
     """, unsafe_allow_html=True)
-    
-    st.title("Login")
-    user = st.text_input("Benutzername")
-    password = st.text_input("Passwort", type="password")
-    
-    if st.button("Anmelden", use_container_width=True):
-        if user == "Administrator" and password == "Finanzen2026":
-            st.session_state["auth"] = True
-            st.rerun()
-        else:
-            st.error("Benutzername oder Passwort falsch.")
+
+    # Physikalische Zentrierung über drei Spalten
+    _, center_col, _ = st.columns([1.5, 1, 1.5])
+
+    with center_col:
+        st.markdown('<div class="login-section">', unsafe_allow_html=True)
+        st.markdown('<div class="brand-title">FINANZ</div>', unsafe_allow_html=True)
+        st.markdown('<div class="brand-subtitle">Cockpit</div>', unsafe_allow_html=True)
+        
+        with st.form("login_gate", border=False):
+            user = st.text_input("Nutzer", placeholder="Benutzername", label_visibility="collapsed")
+            password = st.text_input("Pass", type="password", placeholder="Passwort", label_visibility="collapsed")
+            
+            if st.form_submit_button("Anmelden"):
+                if user == "Administrator" and password == "Finanzen2026":
+                    st.session_state["auth"] = True
+                    st.rerun()
+                else:
+                    st.error("Zugriff verweigert")
+        
+        st.markdown('</div>', unsafe_allow_html=True)
     st.stop() 
 
 # --- 4. HAUPTPROGRAMM (Nur sichtbar, wenn auth == True) ---
