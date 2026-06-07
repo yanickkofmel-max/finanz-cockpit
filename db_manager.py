@@ -1,6 +1,4 @@
-# db_manager.py
 import sqlite3
-import streamlit as st
 
 def get_connection():
     return sqlite3.connect('finanzen.db', check_same_thread=False)
@@ -9,8 +7,7 @@ def init_db():
     conn = get_connection()
     c = conn.cursor()
     
-    # --- 1. WICHTIG: ERST ALLE TABELLEN ERSTELLEN ---
-    # Dadurch gibt es keinen Fehler mehr, falls die DB ganz neu ist
+    # --- 1. TABELLEN ERSTELLEN ---
     c.execute('''CREATE TABLE IF NOT EXISTS konten (name TEXT PRIMARY KEY, typ TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS anfangsbestaende (id INTEGER PRIMARY KEY, konto TEXT, monat TEXT, betrag REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS transaktionen (id INTEGER PRIMARY KEY, konto TEXT, typ TEXT, betrag REAL, beschreibung TEXT, datum TEXT, monat TEXT, status TEXT, modus TEXT, link_id TEXT)''')
@@ -42,28 +39,40 @@ def init_db():
 def get_anfangsbestand(konto_name, target_monat):
     conn = get_connection()
     c = conn.cursor()
+    
+    # 1. Prüfen, ob ein manuell gesetzter Anfangsbestand für GENAU diesen Monat existiert
     res = c.execute("SELECT betrag FROM anfangsbestaende WHERE konto=? AND monat=?", (konto_name, target_monat)).fetchone()
-    if res:
+    if res is not None:
         conn.close()
         return res[0]
     
+    # 2. Wenn nicht, berechnen wir die Summe aller Transaktionen VOR diesem Monat (Echtzeit-Berechnung)
     typ_res = c.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
     ist_vermoegen = (typ_res and typ_res[0] == 'Vermögen')
     
-    jahr, monat = map(int, target_monat.split('-'))
-    aktueller_bestand = 0.0
-    for m in range(1, (jahr - 2026) * 12 + monat):
-        m_jahr = 2026 + (m - 1) // 12
-        m_monat = ((m - 1) % 12) + 1
-        monat_str = f"{m_jahr}-{m_monat:02}"
-        query = "SELECT SUM(betrag) FROM transaktionen WHERE konto=? AND monat=? AND status='bestätigt'" if ist_vermoegen else "SELECT SUM(betrag) FROM transaktionen WHERE konto=? AND monat=?"
-        txn_sum = c.execute(query, (konto_name, monat_str)).fetchone()[0] or 0
-        aktueller_bestand += txn_sum
+    # Da Monate als 'YYYY-MM' gespeichert sind, filtert 'monat < target_monat' fehlerfrei alle Vormonate!
+    if ist_vermoegen:
+        query = "SELECT SUM(betrag) FROM transaktionen WHERE konto=? AND monat < ? AND status='bestätigt'"
+    else:
+        query = "SELECT SUM(betrag) FROM transaktionen WHERE konto=? AND monat < ?"
+        
+    txn_sum = c.execute(query, (konto_name, target_monat)).fetchone()[0] or 0.0
     conn.close()
-    return aktueller_bestand
+    return txn_sum
 
 def set_anfangsbestand(konto_name, monat, betrag):
     conn = get_connection()
-    conn.execute("INSERT OR REPLACE INTO anfangsbestaende (konto, monat, betrag) VALUES (?,?,?)", (konto_name, monat, betrag))
+    c = conn.cursor()
+    
+    # Manueller Duplikat-Schutz: Schauen, ob der Eintrag bereits existiert
+    existing = c.execute("SELECT id FROM anfangsbestaende WHERE konto=? AND monat=?", (konto_name, monat)).fetchone()
+    
+    if existing:
+        # Aktualisieren statt neu erstellen
+        c.execute("UPDATE anfangsbestaende SET betrag=? WHERE id=?", (betrag, existing[0]))
+    else:
+        # Neu anlegen, falls für diesen Monat noch nichts existiert
+        c.execute("INSERT INTO anfangsbestaende (konto, monat, betrag) VALUES (?,?,?)", (konto_name, monat, betrag))
+        
     conn.commit()
     conn.close()
