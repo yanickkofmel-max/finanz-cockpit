@@ -1,14 +1,23 @@
-# app.py
 import streamlit as st
 from datetime import datetime
-import os
 
-# Datenbank sofort initialisieren
+# --- NEU: SICHTBARER DOWNLOAD-TEST ---
+from utils.drive_sync import download_db
+versuch = download_db()
+if versuch == False:
+    st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
+else:
+    st.success("Datenbank erfolgreich von Google Drive geladen!")
+
+# Datenbank initialisieren
 from db_manager import init_db, get_connection
 init_db()
 
+# ... restlicher Code ...
+
 from config import MONATE_MAP
 from theme import apply_banking_styles
+# ... restlicher Code ...
 
 # Die Ansichten importieren
 from views.dashboard import show_dashboard
