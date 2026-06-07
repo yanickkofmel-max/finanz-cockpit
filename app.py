@@ -1,8 +1,11 @@
 import streamlit as st
 from datetime import datetime
+import os  # <-- DIESE ZEILE HAT GEFEHLT UND BEHEBT DEN NAME-ERROR
 
-# --- NEU: SICHTBARER DOWNLOAD-TEST ---
-from utils.drive_sync import download_db
+# --- 1. DATENBANK-SYNC BEIM START ---
+from utils.drive_sync import download_db, upload_db
+
+# Holt die finanzen.db aus dem Drive und überschreibt die lokale
 versuch = download_db()
 if versuch == False:
     st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
@@ -13,11 +16,9 @@ else:
 from db_manager import init_db, get_connection
 init_db()
 
-# ... restlicher Code ...
-
+# Konfiguration und Design-Funktionen importieren
 from config import MONATE_MAP
 from theme import apply_banking_styles
-# ... restlicher Code ...
 
 # Die Ansichten importieren
 from views.dashboard import show_dashboard
@@ -26,7 +27,7 @@ from views.vermoegen import show_vermoegen
 from views.konten_verwaltung import show_konten_verwaltung
 from views.nebenkosten import show_nebenkosten
 
-# --- 1. SETUP & SESSION STATE ---
+# --- 2. SETUP & SESSION STATE ---
 st.set_page_config(layout="wide", page_title="Finanz-Cockpit")
 
 if "auth" not in st.session_state: 
@@ -34,7 +35,7 @@ if "auth" not in st.session_state:
 if 'view' not in st.session_state: 
     st.session_state.view = 'dashboard'
 
-# --- 2. LOGIN GATE ---
+# --- 3. LOGIN GATE ---
 if not st.session_state["auth"]:
     # Design zentriert, ohne Logo
     st.markdown("""
@@ -62,7 +63,7 @@ if not st.session_state["auth"]:
             st.error("Benutzername oder Passwort falsch.")
     st.stop() 
 
-# --- 3. HAUPTPROGRAMM (Nur sichtbar, wenn auth == True) ---
+# --- 4. HAUPTPROGRAMM (Nur sichtbar, wenn auth == True) ---
 apply_banking_styles()
 
 def reset_ansicht():
@@ -114,10 +115,10 @@ with st.sidebar:
 
     st.divider()
     
-    # 2. Daten-Management (Buttons nun darunter)
+    # 2. Daten-Management
     st.markdown("#### ☁️ Daten-Management")
     
-    # Backup Button
+    # Backup Button (Lokal)
     db_file = "finanzen.db"
     if os.path.exists(db_file):
         with open(db_file, "rb") as f:
@@ -129,9 +130,14 @@ with st.sidebar:
                 use_container_width=True
             )
     
-    # Sync Button (identisch zu den anderen Buttons formatiert)
+    # Sync Button (Jetzt mit echter Funktion verknüpft!)
     if st.button("🔄 Sync zu Google Drive", use_container_width=True):
-        st.warning("Sync-Funktion muss noch mit deinem Drive-Script verknüpft werden.")
+        with st.spinner("Synchronisiere mit Google Drive..."):
+            erfolg = upload_db()
+            if erfolg:
+                st.success("Erfolgreich zu Google Drive hochgeladen!")
+            else:
+                st.error("Fehler beim Upload zu Google Drive.")
 
     st.divider()
     
