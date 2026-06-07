@@ -90,19 +90,19 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
         st.title(f"Cockpit: {konto_name}")
         st.caption(f"📅 Filter aktiv: {zeitraum_text}")
         
+        # --- KONTOTYP EINMALIG ABFRAGEN ---
+        conn = get_connection()
+        typ_res = conn.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
+        k_typ = typ_res[0] if typ_res else ""
+        conn.close()
+        is_lohn = (k_typ == "Lohnkonto")
+        
         # --- BLOCKIERUNG FÜR JAHRES-ANSICHT ---
         if globaler_monat.endswith("-ALL"):
             st.info("💡 Um den Startbestand zu verwalten oder neue Buchungen zu erfassen, wähle bitte links in der Sidebar einen spezifischen Monat aus.")
         else:
             akt_bestand = get_anfangsbestand(konto_name, globaler_monat)
             neuer_bestand = akt_bestand
-            
-            conn = get_connection()
-            typ_res = conn.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
-            k_typ = typ_res[0] if typ_res else ""
-            conn.close()
-            
-            is_lohn = (k_typ == "Lohnkonto")
             
             if is_lohn:
                 with st.container(border=True):
@@ -181,21 +181,36 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
         base_monat = start_row[0] if start_row else '2000-01'
         base_betrag = start_row[1] if start_row else 0.0
         
-        if globaler_monat.endswith("-ALL"):
-            df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat LIKE '{ausgewaehltes_jahr}-%'", conn)
+        # --- BERECHNUNG STARTBESTAND & ENDSALDEN (ANGEPASST) ---
+        if is_lohn and not globaler_monat.endswith("-ALL"):
+            akt_bestand = get_anfangsbestand(konto_name, globaler_monat)
+            startbestand_anzeige = float(akt_bestand)
+            conn.close()
+            
+            df_monat = df 
+            if not df_monat.empty:
+                summe_aktuell = startbestand_anzeige + df_monat[df_monat['status'] == 'bestätigt']['betrag'].sum()
+                summe_geplant = startbestand_anzeige + df_monat['betrag'].sum()
+            else:
+                summe_aktuell = startbestand_anzeige
+                summe_geplant = startbestand_anzeige
         else:
-            df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat <= '{globaler_monat}'", conn)
-        conn.close()
-        
-        startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
-        
-        if not df_all.empty:
-            summe_aktuell = base_betrag + df_all[df_all['status'] == 'bestätigt']['betrag'].sum()
-            summe_geplant = base_betrag + df_all['betrag'].sum()
-        else:
-            summe_aktuell = base_betrag
-            summe_geplant = base_betrag
+            if globaler_monat.endswith("-ALL"):
+                df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat LIKE '{ausgewaehltes_jahr}-%'", conn)
+            else:
+                df_all = pd.read_sql(f"SELECT betrag, status FROM transaktionen WHERE konto='{konto_name}' AND monat >= '{base_monat}' AND monat <= '{globaler_monat}'", conn)
+            conn.close()
+            
+            startbestand_anzeige = get_startbestand_bis_vormonat(konto_name, globaler_monat)
+            
+            if not df_all.empty:
+                summe_aktuell = base_betrag + df_all[df_all['status'] == 'bestätigt']['betrag'].sum()
+                summe_geplant = base_betrag + df_all['betrag'].sum()
+            else:
+                summe_aktuell = base_betrag
+                summe_geplant = base_betrag
 
+        # --- TABELLE RENDERN ---
         if not df.empty:
             render_table_header()
             for _, row in df.iterrows(): 
