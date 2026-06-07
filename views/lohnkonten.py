@@ -1,4 +1,3 @@
-# views/lohnkonten.py
 import streamlit as st
 import pandas as pd
 import time
@@ -6,6 +5,7 @@ from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand, set_anfangsbestand
 from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
+from utils.drive_sync import upload_db  # <-- WICHTIG: Holt die Sync-Funktion
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -28,6 +28,8 @@ def handle_confirm(id, status):
         conn.execute("UPDATE transaktionen SET status=? WHERE id=?", (new_status, id))
     conn.commit()
     conn.close()
+    
+    upload_db()  # <-- Sofort hochladen nach Statusänderung
     st.rerun()
 
 def handle_delete(id):
@@ -41,6 +43,8 @@ def handle_delete(id):
         conn.execute("DELETE FROM transaktionen WHERE id=?", (id,))
     conn.commit()
     conn.close()
+    
+    upload_db()  # <-- Sofort hochladen nach Löschen
     st.rerun()
 
 def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
@@ -103,6 +107,7 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                     st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
                     if st.button("💾 Speichern", key=f"btn_lohn_{konto_name}_{globaler_monat}", use_container_width=True):
                         set_anfangsbestand(konto_name, globaler_monat, neuer_bestand)
+                        upload_db()  # <-- Sofort hochladen nach Anfangsbestand-Änderung
                         st.success("Gespeichert!")
                         time.sleep(0.5)
                         st.rerun()
@@ -127,7 +132,6 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                 if st.form_submit_button("Buchung speichern"):
                     datum_str = txn_datum.strftime("%Y-%m-%d")
                     
-                    # --- FIX: Nutzt das ausgewählte Datum für den Zielmonat ---
                     txn_jahr = txn_datum.year
                     txn_monat_num = txn_datum.month
                     
@@ -150,6 +154,8 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                                          (konto_name, typ, val, desc, datum_str, z_monat, "geplant", modus, ""))
                     conn.commit()
                     conn.close()
+                    
+                    upload_db()  # <-- Sofort hochladen nach neuer Buchung
                     st.rerun()
 
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
