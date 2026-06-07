@@ -12,6 +12,9 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS anfangsbestaende (id INTEGER PRIMARY KEY, konto TEXT, monat TEXT, betrag REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS transaktionen (id INTEGER PRIMARY KEY, konto TEXT, typ TEXT, betrag REAL, beschreibung TEXT, datum TEXT, monat TEXT, status TEXT, modus TEXT, link_id TEXT)''')
     
+    # NEU: Tabelle für die Budget-Planung
+    c.execute('''CREATE TABLE IF NOT EXISTS budget_nebenkosten (id INTEGER PRIMARY KEY AUTOINCREMENT, beschreibung TEXT, betrag_jaehrlich REAL, konto TEXT)''')
+    
     # --- 2. AUTOMATISCHES CLEANUP ---
     alte_konten = ['Baloise Bank', 'Helvetia', 'Swiss Life']
     for alt in alte_konten:
@@ -40,17 +43,14 @@ def get_anfangsbestand(konto_name, target_monat):
     conn = get_connection()
     c = conn.cursor()
     
-    # 1. Prüfen, ob ein manuell gesetzter Anfangsbestand für GENAU diesen Monat existiert
     res = c.execute("SELECT betrag FROM anfangsbestaende WHERE konto=? AND monat=?", (konto_name, target_monat)).fetchone()
     if res is not None:
         conn.close()
         return res[0]
     
-    # 2. Wenn nicht, berechnen wir die Summe aller Transaktionen VOR diesem Monat (Echtzeit-Berechnung)
     typ_res = c.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
     ist_vermoegen = (typ_res and typ_res[0] == 'Vermögen')
     
-    # Da Monate als 'YYYY-MM' gespeichert sind, filtert 'monat < target_monat' fehlerfrei alle Vormonate!
     if ist_vermoegen:
         query = "SELECT SUM(betrag) FROM transaktionen WHERE konto=? AND monat < ? AND status='bestätigt'"
     else:
@@ -64,14 +64,11 @@ def set_anfangsbestand(konto_name, monat, betrag):
     conn = get_connection()
     c = conn.cursor()
     
-    # Manueller Duplikat-Schutz: Schauen, ob der Eintrag bereits existiert
     existing = c.execute("SELECT id FROM anfangsbestaende WHERE konto=? AND monat=?", (konto_name, monat)).fetchone()
     
     if existing:
-        # Aktualisieren statt neu erstellen
         c.execute("UPDATE anfangsbestaende SET betrag=? WHERE id=?", (betrag, existing[0]))
     else:
-        # Neu anlegen, falls für diesen Monat noch nichts existiert
         c.execute("INSERT INTO anfangsbestaende (konto, monat, betrag) VALUES (?,?,?)", (konto_name, monat, betrag))
         
     conn.commit()

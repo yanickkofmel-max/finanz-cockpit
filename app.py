@@ -199,14 +199,20 @@ with st.sidebar:
     st.markdown("#### 📅 Zeitraum")
     col1, col2 = st.columns(2)
     akt_monat_index = datetime.now().month - 1
-    with col1:
-        ausgewaehlter_monat_name = st.selectbox("Monat", list(MONATE_MAP.keys()), index=akt_monat_index, label_visibility="collapsed")
+    
     with col2:
         ausgewaehltes_jahr = st.selectbox("Jahr", [2024, 2025, 2026, 2027], index=2, label_visibility="collapsed")
+        
+    with col1:
+        # Wir hängen "Gesamtes Jahr" an das Ende der Auswahlliste an
+        monat_optionen = list(MONATE_MAP.keys()) + ["Gesamtes Jahr"]
+        ausgewaehlter_monat_name = st.selectbox("Monat", monat_optionen, index=akt_monat_index, label_visibility="collapsed")
 
-    globaler_monat = f"{ausgewaehltes_jahr}-{MONATE_MAP[ausgewaehlter_monat_name]}"
-
-    st.divider()
+    # Signal für das gesamte Jahr oder einen einzelnen Monat generieren
+    if ausgewaehlter_monat_name == "Gesamtes Jahr":
+        globaler_monat = f"{ausgewaehltes_jahr}-ALL"
+    else:
+        globaler_monat = f"{ausgewaehltes_jahr}-{MONATE_MAP[ausgewaehlter_monat_name]}"
     
     # 2. Daten-Management
     st.markdown("#### ☁️ Daten-Management")
