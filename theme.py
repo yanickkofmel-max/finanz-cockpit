@@ -1,4 +1,3 @@
-# theme.py
 import streamlit as st
 from datetime import datetime
 
@@ -14,14 +13,14 @@ def apply_banking_styles():
         .bank-tile {
             background: linear-gradient(145deg, #161920, #0E1117);
             border: 1px solid #222630;
-            border-radius: 14px; /* Etwas runder und kompakter */
-            padding: 16px; /* Reduziert von 20px für mehr Kompaktheit */
-            margin-bottom: 14px; /* FIX: Sauberer Abstand zum Button, keine Überschneidung mehr! */
+            border-radius: 14px; 
+            padding: 16px; 
+            margin-bottom: 14px; 
             width: 100%;
             color: white;
             display: flex;
             flex-direction: column;
-            gap: 14px; /* Abstand zwischen Header und Zahlen-Box verkleinert */
+            gap: 14px; 
             box-shadow: 0 6px 18px rgba(0, 0, 0, 0.2);
             transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
         }
@@ -35,10 +34,9 @@ def apply_banking_styles():
         .header-box { 
             display: flex; 
             align-items: center; 
-            gap: 12px; /* Etwas enger zusammen */
+            gap: 12px; 
         }
         
-        /* Dezente, kompaktere Icon-Box */
         .logo-wrapper {
             background: #FFFFFF;
             border-radius: 10px;
@@ -46,7 +44,7 @@ def apply_banking_styles():
             display: flex;
             align-items: center;
             justify-content: center;
-            width: 54px; /* Kompakter, vorher 65px */
+            width: 54px; 
             height: 54px;
             box-shadow: 0 4px 10px rgba(0,0,0,0.12);
             flex-shrink: 0;
@@ -59,26 +57,25 @@ def apply_banking_styles():
         }
         
         .title-text { 
-            font-size: 1.0rem; /* Leicht verkleinert für die Proportionen */
+            font-size: 1.0rem; 
             font-weight: 500; 
             color: #E2E8F0;
             letter-spacing: 0.3px;
         }
         
-        /* Kompaktere Zahlen-Box */
         .grid-box { 
             display: flex; 
             justify-content: space-between;
             background: #1A1E26;
             border-radius: 10px;
-            padding: 10px 14px; /* Weniger leerer Raum oben/unten */
+            padding: 10px 14px; 
             border: 1px solid #252A35;
         }
         
         .val-col {
             display: flex;
             flex-direction: column;
-            gap: 2px; /* Zahlen und Label näher zusammen */
+            gap: 2px; 
         }
         
         .val-col.right {
@@ -95,7 +92,7 @@ def apply_banking_styles():
         }
         
         .val-text { 
-            font-size: 1.05rem; /* Leicht angepasst */
+            font-size: 1.05rem; 
             font-weight: 700; 
             color: #FFFFFF; 
         }
@@ -114,8 +111,9 @@ def apply_banking_styles():
         }
 
         /* --- Minimalistisches E-Banking Listendesign --- */
-        .txn-title { font-weight: 500; color: #FFFFFF; font-size: 0.95rem; }
-        .txn-meta { color: #8A8F98; font-size: 0.78rem; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
+        /* ANPASSUNG: var(--text-color) macht den Text dynamisch schwarz oder weiss! */
+        .txn-title { font-weight: 500; color: var(--text-color); font-size: 0.95rem; }
+        .txn-meta { color: var(--text-color); opacity: 0.6; font-size: 0.78rem; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
         
         .status-tag-geplant {
             background-color: rgba(255, 193, 7, 0.12); color: #FFC107; padding: 1px 6px;
@@ -128,28 +126,29 @@ def apply_banking_styles():
 
         /* --- Nahtlos integrierte Action-Buttons --- */
         .stButton > button {
-            border: 1px solid #222630 !important;
-            background-color: #11141A !important;
-            color: #8A8F98 !important;
+            border: 1px solid var(--secondary-background-color) !important;
+            background-color: transparent !important;
+            color: var(--text-color) !important;
+            opacity: 0.8;
             font-size: 0.85rem !important;
             padding: 6px 12px !important;
             border-radius: 10px !important;
             transition: all 0.2s ease-in-out !important;
             width: 100% !important;
             min-height: 34px !important;
-            margin-top: 4px !important; /* Zusätzliche Sicherheit gegen Überlappen */
+            margin-top: 4px !important; 
         }
         .stButton > button:hover {
-            background-color: #1A1E26 !important;
-            color: #FFFFFF !important;
-            border-color: #3A4150 !important;
+            background-color: var(--secondary-background-color) !important;
+            opacity: 1;
         }
         </style>
     """, unsafe_allow_html=True)
 
 def render_table_header():
+    # ANPASSUNG: Tabellen-Kopf ist jetzt dynamisch gefärbt
     st.markdown("""
-        <div style='display: flex; padding: 0px 8px 10px 8px; color: #6C727F; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #262730; margin-bottom: 8px;'>
+        <div style='display: flex; padding: 0px 8px 10px 8px; color: var(--text-color); opacity: 0.7; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--secondary-background-color); margin-bottom: 8px;'>
             <div style='flex: 3.5;'>Beschreibung</div>
             <div style='flex: 1.5; text-align: right; padding-right: 15px;'>Betrag</div>
             <div style='flex: 2.2; text-align: center;'>Aktionen</div>
@@ -203,4 +202,5 @@ def render_transaction_row(row, on_confirm, on_delete):
             if st.button("🗑 Löschen", key=f"del_{row['id']}", use_container_width=True):
                 on_delete(row['id'])
                 
-    st.markdown("<div style='border-bottom: 1px solid #1C1E24; margin-top: 4px; margin-bottom: 4px;'></div>", unsafe_allow_html=True)
+    # ANPASSUNG: Trennlinie zwischen den Buchungen passt sich nun dezent dem Light/Dark Mode an
+    st.markdown("<div style='border-bottom: 1px solid var(--secondary-background-color); margin-top: 4px; margin-bottom: 4px;'></div>", unsafe_allow_html=True)
