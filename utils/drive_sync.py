@@ -4,27 +4,48 @@ import os
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload, MediaIoBaseUpload
-from utils.logger import logger
+
+# Logger sicher importieren, falls die Datei mal fehlt
+try:
+    from utils.logger import logger
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
 # --- KONFIGURATION (Hier ist alles sicher an einem Platz) ---
-LOCAL_DB = 'vereinsverwaltung.db'
-JSON_PATH = 'google_creds.json'
-DEINE_GOOGLE_EMAIL = 'yanick.kofmel@gmail.com'  # Falls abweichend, nur hier ändern!
+LOCAL_DB = 'finanzen.db'  # <-- Geändert für dein Finanz-Cockpit!
+JSON_PATH = 'google_creds.json' 
+DEINE_GOOGLE_EMAIL = 'yanick.kofmel@gmail.com'
 
 def get_drive_service():
-    """Authentifiziert sich direkt über die JSON-Datei im Repository."""
+    """Authentifiziert sich via Secrets (Cloud/Lokal) oder JSON-Datei."""
     SCOPES = ['https://www.googleapis.com/auth/drive']
     try:
-        if not os.path.exists(JSON_PATH):
-            logger.error(f"Authentifizierungsdatei {JSON_PATH} wurde auf GitHub nicht gefunden!")
+        # 1. Cloud-Modus: Prüfen, ob wir Streamlit Secrets haben (Online & .streamlit/secrets.toml)
+        if "gcp_service_account" in st.secrets:
+            creds_info = dict(st.secrets["gcp_service_account"])
+            creds = service_account.Credentials.from_service_account_info(
+                creds_info, 
+                scopes=SCOPES
+            )
+            return creds
+            
+        # 2. Lokal-Modus: JSON Datei nutzen (Fallback)
+        elif os.path.exists(JSON_PATH):
+            creds = service_account.Credentials.from_service_account_file(
+                JSON_PATH, 
+                scopes=SCOPES
+            )
+            return creds
+            
+        # 3. Nichts gefunden
+        else:
+            logger.error(f"Authentifizierung fehlt! Weder Secrets noch {JSON_PATH} gefunden.")
             return None
-        creds = service_account.Credentials.from_service_account_file(
-            JSON_PATH, 
-            scopes=SCOPES
-        )
-        return creds
+            
     except Exception as e:
-        logger.error(f"Authentifizierungsfehler über JSON-Datei: {e}")
+        logger.error(f"Authentifizierungsfehler: {e}")
         return None
 
 def upload_db():
@@ -41,6 +62,7 @@ def upload_db():
         service = build('drive', 'v3', credentials=creds, static_discovery=False)
         
         if not os.path.exists(LOCAL_DB):
+            logger.error(f"Lokale Datenbank {LOCAL_DB} nicht gefunden!")
             return False
             
         media = MediaFileUpload(LOCAL_DB, mimetype='application/x-sqlite3', resumable=True)
