@@ -8,7 +8,7 @@ from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
-from utils.market_data import get_exchange_rate
+from utils.market_data import get_exchange_rate, get_current_price
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -18,6 +18,37 @@ def get_konten_von_db(typ=None):
         konten = [row[0] for row in conn.execute("SELECT name FROM konten").fetchall()]
     conn.close()
     return konten
+
+# Hilfsfunktion zur Live-Berechnung des gesamten Portfoliowertes in CHF
+def get_total_portfolio_value_chf():
+    conn = get_connection()
+    try:
+        df_trades = pd.read_sql("SELECT * FROM portfolio_trades", conn)
+    except:
+        df_trades = pd.DataFrame()
+    conn.close()
+    
+    if df_trades.empty:
+        return 0.0
+        
+    portfolio = {}
+    for _, row in df_trades.iterrows():
+        t = row['ticker']
+        if t not in portfolio:
+            portfolio[t] = {'menge': 0.0, 'waehrung': row['waehrung']}
+        
+        if row['aktion'] == 'Kauf':
+            portfolio[t]['menge'] += row['menge']
+        elif row['aktion'] == 'Verkauf':
+            portfolio[t]['menge'] -= row['menge']
+            
+    total_chf = 0.0
+    for t, data in portfolio.items():
+        if data['menge'] > 0.00001:
+            live_preis = get_current_price(t)
+            live_kurs_chf = get_exchange_rate(data['waehrung'], "CHF")
+            total_chf += data['menge'] * live_preis * live_kurs_chf
+    return total_chf
 
 def handle_confirm(id, status):
     conn = get_connection()
@@ -71,14 +102,52 @@ def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
 def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat):
     zeitraum_text = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
 
+    # --- ANSICHT 1: DAS HAUPT-DASHBOARD ---
     if st.session_state.view == 'dashboard':
         st.title("Dashboard")
         st.caption(f"📊 Finanz-Gesamtübersicht für {zeitraum_text}")
-        st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
+        st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
         lohn_konten = get_konten_von_db("Lohnkonto")
         vermoegen_konten = get_konten_von_db("Vermögen")
         
+        # ---> ERWEITERUNG 1: MATHEMATISCHE BERECHNUNG FÜR DAS COCKPIT <---
+        total_lohn_chf = 0.0
+        for l_name in lohn_konten:
+            if globaler_monat.endswith("-ALL"):
+                conn = get_connection()
+                df_all_l = pd.read_sql(f"SELECT betrag FROM transaktionen WHERE konto='{l_name}' AND monat LIKE '{ausgewaehltes_jahr}-%' AND status='bestätigt'", conn)
+                start_l = get_startbestand_bis_vormonat(l_name, globaler_monat)
+                conn.close()
+                total_lohn_chf += start_l + (df_all_l['betrag'].sum() if not df_all_l.empty else 0.0)
+            else:
+                conn = get_connection()
+                df_monat_l = pd.read_sql(f"SELECT SUM(betrag) as total FROM transaktionen WHERE konto='{l_name}' AND monat='{globaler_monat}' AND status='bestätigt'", conn)
+                conn.close()
+                total_lohn_chf += (df_monat_l['total'].iloc[0] or 0.0) + get_anfangsbestand(l_name, globaler_monat)
+
+        total_vermoegen_chf = 0.0
+        for v_name in vermoegen_konten:
+            s_geo, s_akt = get_saldo_bis_monat(v_name, globaler_monat)
+            if v_name == "Yuh USD":
+                total_vermoegen_chf += s_akt * get_exchange_rate("USD", "CHF")
+            else:
+                total_vermoegen_chf += s_akt
+
+        portfolio_live_value = get_total_portfolio_value_chf()
+        echtes_gesamtvermoegen = total_lohn_chf + total_vermoegen_chf + portfolio_live_value
+
+        # Visuelles Cockpit ganz oben rendern
+        with st.container(border=True):
+            st.markdown("#### 👑 Dein Vermögens-Cockpit (Net Worth)")
+            st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+            sum_c1, sum_c2, sum_c3 = st.columns(3)
+            sum_c1.metric("💳 Flüssige Mittel (Lohnkonten)", f"{total_lohn_chf:,.2f} CHF")
+            sum_c2.metric("📈 Anlagen (Ersparnisse + Depots)", f"{(total_vermoegen_chf + portfolio_live_value):,.2f} CHF")
+            sum_c3.metric("💰 Echte Net-Worth (Gesamt)", f"{echtes_gesamtvermoegen:,.2f} CHF")
+        
+        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+
         if lohn_konten:
             st.subheader("💳 Lohnkonten")
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
@@ -91,16 +160,44 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
 
         if vermoegen_konten:
-            st.subheader("📈 Vermögen")
+            st.subheader("📈 Vermögen & Investments")
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-            for i in range(0, len(vermoegen_konten), 3):
-                chunk = vermoegen_konten[i:i+3]
+            
+            # ---> ERWEITERUNG 2: MIX DER REALEN KACHELN + DIE PORTFOLIO-VIRTUAL-KACHEL <---
+            alle_kacheln = list(vermoegen_konten) + ["_VIRTUAL_PORTFOLIO_"]
+            for i in range(0, len(alle_kacheln), 3):
+                chunk = alle_kacheln[i:i+3]
                 spalten = st.columns(3)
-                for j, k_name in enumerate(chunk):
+                for j, item in enumerate(chunk):
                     with spalten[j]:
-                        render_bank_kachel(k_name, globaler_monat, show_button=True)
+                        if item == "_VIRTUAL_PORTFOLIO_":
+                            # Wunderschöne, farblich angepasste Kachel für das Portfolio
+                            st.markdown(f"""
+                                <div class="bank-tile" style="border-color: rgba(46, 204, 113, 0.25);">
+                                    <div class="header-box">
+                                        <div class="logo-wrapper" style="background: #2ECC71; display: flex; align-items: center; justify-content: center; font-size: 1.4rem;">
+                                            🚀
+                                        </div>
+                                        <div class="title-text" style="color: #2ECC71; font-weight: bold;">Wertschriften-Portfolio</div>
+                                    </div>
+                                    <div class="grid-box" style="background: rgba(46, 204, 113, 0.03);">
+                                        <div class="val-col">
+                                            <div class="label-text">Live-Wert</div>
+                                            <div class="val-text" style="color: #2ECC71;">{portfolio_live_value:,.2f} CHF</div>
+                                        </div>
+                                        <div class="val-col right">
+                                            <div class="label-text">Status</div>
+                                            <div class="val-text" style="font-size: 0.85rem; color: #2ECC71; padding-top: 4px;">● Aktiv (Live)</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+                            st.caption("💡 Details & historische Trades findest du im Menü unter 'Aktien & Krypto'.")
+                        else:
+                            render_bank_kachel(item, globaler_monat, show_button=True)
             st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
             
+            # KREISDIAGRAMM-STRUKTUR
             chart_data = []
             for k_name in vermoegen_konten:
                 s_geo, s_akt = get_saldo_bis_monat(k_name, globaler_monat)
@@ -110,6 +207,10 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                         chart_data.append({"Konto": k_name, "Saldo": s_akt * usd_rate})
                     else:
                         chart_data.append({"Konto": k_name, "Saldo": s_akt})
+            
+            # ---> ERWEITERUNG 3: PORTFOLIO IN DAS KREISDIAGRAMM EINSPEISEN <---
+            if portfolio_live_value > 0:
+                chart_data.append({"Konto": "🚀 Wertschriften-Portfolio", "Saldo": portfolio_live_value})
             
             if chart_data:
                 df_chart = pd.DataFrame(chart_data)
@@ -132,6 +233,7 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             else:
                 st.info("Noch kein positives, effektiv verbuchtes Vermögen für die Diagramm-Anzeige in diesem Zeitraum vorhanden.")
 
+    # --- ANSICHT 2: COCKPIT-DETAILS ---
     elif st.session_state.view == 'lohn_details':
         konto_name = st.session_state.selected_konto
         st.title(f"Cockpit: {konto_name}")
