@@ -3,7 +3,8 @@ import pandas as pd
 import time
 from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand, set_anfangsbestand
-from components import render_bank_kachel, get_saldo_bis_monat
+# ---> WICHTIG: Hier ist format_num nun korrekt importiert <---
+from components import render_bank_kachel, get_saldo_bis_monat, format_num
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
@@ -134,11 +135,17 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                     modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
                     
                     von_konto, nach_konto = None, None
+                    manuell_kurs = 0.0
+                    
                     if typ == "Übertrag (Umbuchung)":
                         st.markdown("---")
                         c3, c4 = st.columns(2)
                         von_konto = c3.selectbox("Von Konto", ALLE_KONTEN, index=ALLE_KONTEN.index(konto_name))
                         nach_konto = c4.selectbox("Nach Konto", [k for k in ALLE_KONTEN if k != von_konto])
+                        
+                        st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+                        manuell_kurs = st.number_input("Wechselkurs (optional, bei Fremdwährungen)", min_value=0.0000, format="%.4f", step=0.0100, help="Lass dies auf 0.0000, um den tagesaktuellen Live-Kurs zu nutzen.")
+
 
                     if st.form_submit_button("Buchung speichern"):
                         datum_str = txn_datum.strftime("%Y-%m-%d")
@@ -164,15 +171,19 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                                 d_nach = f"Übertrag von {von_konto}: {desc}"
                                 
                                 if w_von != w_nach:
-                                    usd_rate = get_exchange_rate("USD", "CHF")
+                                    if manuell_kurs > 0:
+                                        usd_rate = manuell_kurs
+                                    else:
+                                        usd_rate = get_exchange_rate("USD", "CHF")
+                                        
                                     if w_von == "USD": 
                                         b_nach = betrag * usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} CHF @ Kurs {usd_rate:.4f}): {desc}"
                                     else:
                                         b_nach = betrag / usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} USD @ Kurs {usd_rate:.4f}): {desc}"
 
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
                                              (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
