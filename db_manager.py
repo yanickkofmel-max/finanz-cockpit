@@ -11,9 +11,26 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS konten (name TEXT PRIMARY KEY, typ TEXT)''')
     c.execute('''CREATE TABLE IF NOT EXISTS anfangsbestaende (id INTEGER PRIMARY KEY, konto TEXT, monat TEXT, betrag REAL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS transaktionen (id INTEGER PRIMARY KEY, konto TEXT, typ TEXT, betrag REAL, beschreibung TEXT, datum TEXT, monat TEXT, status TEXT, modus TEXT, link_id TEXT)''')
-    
-    # NEU: Tabelle für die Budget-Planung
     c.execute('''CREATE TABLE IF NOT EXISTS budget_nebenkosten (id INTEGER PRIMARY KEY AUTOINCREMENT, beschreibung TEXT, betrag_jaehrlich REAL, konto TEXT)''')
+    
+    c.execute('''CREATE TABLE IF NOT EXISTS portfolio_trades (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        konto TEXT,
+        ticker TEXT,
+        aktion TEXT,
+        menge REAL,
+        kaufpreis_einzeln REAL,
+        waehrung TEXT,
+        wechselkurs_kauf REAL,
+        datum TEXT
+    )''')
+    
+    # ---> NEU: DB Upgrade für Depot und Gebühren (Fehlertolerant) <---
+    try:
+        c.execute("ALTER TABLE portfolio_trades ADD COLUMN depot TEXT DEFAULT 'Neon Invest'")
+        c.execute("ALTER TABLE portfolio_trades ADD COLUMN gebuehren REAL DEFAULT 0.0")
+    except:
+        pass # Spalten existieren bereits
     
     # --- 2. AUTOMATISCHES CLEANUP ---
     alte_konten = ['Baloise Bank', 'Helvetia', 'Swiss Life']
@@ -25,7 +42,8 @@ def init_db():
     # --- 3. NEUE STRUKTUR ---
     fixe_konten = [
         ("Lohnkonto", "Lohnkonto"), ("Neon", "Lohnkonto"),
-        ("Sparkonto", "Vermögen"), ("Neon Invest", "Vermögen"), ("Yuh Invest", "Vermögen"),
+        ("Sparkonto", "Vermögen"), ("Neon Invest", "Vermögen"), ("Yuh Invest", "Vermögen"), ("Yuh USD", "Vermögen"),
+        # ... (Rest bleibt gleich)
         ("Baloise 3a", "Vermögen"), ("Helvetia 3a", "Vermögen"), ("SwissLife 3a", "Vermögen"), 
         ("Kleider", "Nebenkosten"), ("Geschenke", "Nebenkosten"), 
         ("Ferien", "Nebenkosten"), ("Auto", "Nebenkosten"), 

@@ -110,8 +110,6 @@ def apply_banking_styles():
             font-weight: bold;
         }
 
-        /* --- Minimalistisches E-Banking Listendesign --- */
-        /* ANPASSUNG: var(--text-color) macht den Text dynamisch schwarz oder weiss! */
         .txn-title { font-weight: 500; color: var(--text-color); font-size: 0.95rem; }
         .txn-meta { color: var(--text-color); opacity: 0.6; font-size: 0.78rem; margin-top: 3px; display: flex; align-items: center; gap: 6px; }
         
@@ -124,7 +122,6 @@ def apply_banking_styles():
             border-radius: 4px; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.3px;
         }
 
-        /* --- Nahtlos integrierte Action-Buttons --- */
         .stButton > button {
             border: 1px solid var(--secondary-background-color) !important;
             background-color: transparent !important;
@@ -146,7 +143,6 @@ def apply_banking_styles():
     """, unsafe_allow_html=True)
 
 def render_table_header():
-    # ANPASSUNG: Tabellen-Kopf ist jetzt dynamisch gefärbt
     st.markdown("""
         <div style='display: flex; padding: 0px 8px 10px 8px; color: var(--text-color); opacity: 0.7; font-size: 0.78rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--secondary-background-color); margin-bottom: 8px;'>
             <div style='flex: 3.5;'>Beschreibung</div>
@@ -159,8 +155,10 @@ def render_transaction_row(row, on_confirm, on_delete):
     is_geplant = row['status'] == "geplant"
     badge_html = '<span class="status-tag-geplant">Geplant</span>' if is_geplant else '<span class="status-tag-bestaetigt">Gebucht</span>'
     
+    # ---> NEU: Dynamische Währung je nach Konto <---
+    waehrung = "USD" if row.get('konto') == "Yuh USD" else "CHF"
     betrag = row['betrag']
-    betrag_str = f"{betrag:+,.2f} CHF".replace('+', '+ ').replace('-', '- ')
+    betrag_str = f"{betrag:+,.2f} {waehrung}".replace('+', '+ ').replace('-', '- ')
     betrag_style = "amount-pos" if betrag >= 0 else "amount-neg"
     
     ist_dauer = "Dauerauftrag" in str(row.get('modus', ''))
@@ -202,5 +200,4 @@ def render_transaction_row(row, on_confirm, on_delete):
             if st.button("🗑 Löschen", key=f"del_{row['id']}", use_container_width=True):
                 on_delete(row['id'])
                 
-    # ANPASSUNG: Trennlinie zwischen den Buchungen passt sich nun dezent dem Light/Dark Mode an
     st.markdown("<div style='border-bottom: 1px solid var(--secondary-background-color); margin-top: 4px; margin-bottom: 4px;'></div>", unsafe_allow_html=True)

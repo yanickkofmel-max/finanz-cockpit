@@ -31,6 +31,7 @@ from views.lohnkonten import show_lohnkonten
 from views.vermoegen import show_vermoegen
 from views.konten_verwaltung import show_konten_verwaltung
 from views.nebenkosten import show_nebenkosten
+from views.portfolio import show_portfolio  # <--- DIESE ZEILE NEU HINZUFÜGEN
 
 # --- 2. SESSION STATES INITIALISIEREN ---
 if "auth" not in st.session_state: 
@@ -182,7 +183,8 @@ with st.sidebar:
         "💳 Lohnkonten": "Lohnkonten",
         "📈 Vermögen": "Vermögen",
         "🛒 Nebenkosten": "Nebenkosten",
-        "⚙️ Konten-Verwaltung": "Konten-Verwaltung"
+        "⚙️ Konten-Verwaltung": "Konten-Verwaltung", # <--- KOMMA NICHT VERGESSEN!
+        "🚀 Aktien & Krypto": "Portfolio"            # <--- DIESE ZEILE NEU HINZUFÜGEN
     }
 
     auswahl_anzeige = st.radio(
@@ -256,3 +258,5 @@ elif bereich == "Nebenkosten":
     show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
 elif bereich == "Konten-Verwaltung":
     show_konten_verwaltung()
+elif bereich == "Portfolio":         # <--- DIESE ZEILE NEU
+    show_portfolio()                 # <--- DIESE ZEILE NEU
