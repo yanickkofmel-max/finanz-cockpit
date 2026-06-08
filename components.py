@@ -3,6 +3,17 @@ import pandas as pd
 import base64
 from db_manager import get_connection, get_anfangsbestand
 
+# ---> NEU: Globale Formatierungs-Funktion für Schweizer Zahlen <---
+def format_num(amount, decimals=2, force_sign=False):
+    try:
+        val = float(amount)
+        if force_sign:
+            return f"{val:+,.{decimals}f}".replace(",", "'")
+        else:
+            return f"{val:,.{decimals}f}".replace(",", "'")
+    except:
+        return "0.00"
+
 def get_image_base64(path):
     try:
         with open(path, "rb") as f:
@@ -62,6 +73,7 @@ def render_bank_kachel(konto_name, monat_str, show_button=True):
     logo_b64 = get_logo_fuer_konto(konto_name)
     waehrung_str = "USD" if konto_name == "Yuh USD" else "CHF"
 
+    # ---> NEU: Hochkomma-Format in der Bankkachel <---
     st.markdown(f"""
         <div class="bank-tile">
             <div class="header-box">
@@ -73,11 +85,11 @@ def render_bank_kachel(konto_name, monat_str, show_button=True):
             <div class="grid-box">
                 <div class="val-col">
                     <div class="label-text">Geplant</div>
-                    <div class="val-text">{s_geo:,.2f} {waehrung_str}</div>
+                    <div class="val-text">{format_num(s_geo)} {waehrung_str}</div>
                 </div>
                 <div class="val-col right">
                     <div class="label-text">Aktuell</div>
-                    <div class="val-text">{s_akt:,.2f} {waehrung_str}</div>
+                    <div class="val-text">{format_num(s_akt)} {waehrung_str}</div>
                 </div>
             </div>
         </div>
