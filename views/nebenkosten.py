@@ -6,7 +6,8 @@ from db_manager import get_connection, get_anfangsbestand
 from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
-from utils.pdf_generator import generate_kontoauszug_pdf  # <-- NEU
+from utils.pdf_generator import generate_kontoauszug_pdf
+from utils.market_data import get_exchange_rate
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -48,7 +49,6 @@ def handle_delete(id):
 
 def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
     conn = get_connection()
-    # Jahres-Filter abfangen: Startbestand des Jahres ist alles VOR dem Januar dieses Jahres
     if aktueller_monat_str.endswith("-ALL"):
         jahr = aktueller_monat_str.split("-")[0]
         vergleichs_monat = f"{jahr}-01"
@@ -73,7 +73,6 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
 
     if st.session_state.view == 'dashboard':
         st.title("🛒 Nebenkosten Übersicht")
-        # Text-Anpassung bei Jahres-Auswahl
         zeitraum_label = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
         st.caption(f"Zeitraum: {zeitraum_label}")
         st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
@@ -103,7 +102,6 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
             base_monat = start_row[0] if start_row else '2000-01'
             base_betrag = start_row[1] if start_row else 0.0
             
-            # Dynamischer SQL-Filter für das ganze Jahr (LIKE '2026-%') oder Monat (= '2026-06')
             if globaler_monat.endswith("-ALL"):
                 tx_query = f"SELECT betrag, status FROM transaktionen WHERE konto='{k_name}' AND monat >= '{base_monat}' AND monat LIKE '{ausgewaehltes_jahr}-%'"
             else:
@@ -125,7 +123,6 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
         col_tot2.metric("Gesamter Geplanter Endsaldo", f"{total_geplant_endsaldo:,.2f} CHF")
         col_tot3.metric("Gesamter Aktueller Saldo (Ist-Stand)", f"{total_aktueller_saldo:,.2f} CHF")
 
-        # --- BUDGET PLANNING BLOCKED FOR WHOLE YEAR ---
         st.markdown("<div style='height: 25px;'></div>", unsafe_allow_html=True)
         with st.expander("📝 Budget-Planung (Sparplan für deine Töpfe)"):
             if globaler_monat.endswith("-ALL"):
@@ -139,7 +136,7 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
                     b_topf = c2.selectbox("Zuweisen zu Topf", NEBENKOSTEN_KONTEN)
                     b_betrag = c3.number_input("Kosten pro Jahr (CHF)", min_value=0.0, step=50.0, format="%.2f")
                     
-                    if st.form_submit_button("Budget-Position保存"):
+                    if st.form_submit_button("Budget-Position speichern"):
                         if b_desc and b_betrag > 0:
                             conn.execute("INSERT INTO budget_nebenkosten (beschreibung, betrag_jaehrlich, konto) VALUES (?,?,?)", (b_desc, b_betrag, b_topf))
                             conn.commit()
@@ -194,7 +191,8 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
             typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
             with st.form("add_txn_nebenkosten"):
                 c1, c2 = st.columns(2)
-                betrag = c1.number_input("Betrag", min_value=0.0)
+                curr_label = "USD" if konto_name == "Yuh USD" else "CHF"
+                betrag = c1.number_input(f"Betrag ({curr_label})", min_value=0.0)
                 txn_datum = c1.date_input("Buchungsdatum", datetime.now())
                 desc = c2.text_input("Beschreibung / Zweck")
                 modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
@@ -220,10 +218,30 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
                     for z_monat in ziel_monate:
                         if typ == "Übertrag (Umbuchung)":
                             link = f"TR-{z_monat}-{int(time.time()*1000)}"
+                            
+                            w_von = "USD" if von_konto == "Yuh USD" else "CHF"
+                            w_nach = "USD" if nach_konto == "Yuh USD" else "CHF"
+                            
+                            b_von = betrag
+                            b_nach = betrag
+                            d_von = f"Übertrag an {nach_konto}: {desc}"
+                            d_nach = f"Übertrag von {von_konto}: {desc}"
+                            
+                            if w_von != w_nach:
+                                usd_rate = get_exchange_rate("USD", "CHF")
+                                if w_von == "USD": 
+                                    b_nach = betrag * usd_rate
+                                    d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                    d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                else:
+                                    b_nach = betrag / usd_rate
+                                    d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                    d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+
                             conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                         (von_konto, "Belastung", -betrag, f"Übertrag an {nach_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                         (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
                             conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                         (nach_konto, "Gutschrift", betrag, f"Übertrag von {von_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                         (nach_konto, "Gutschrift", b_nach, d_nach, datum_str, z_monat, "geplant", modus, link))
                         else:
                             val = -betrag if typ == "Belastung" else betrag
                             conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -237,7 +255,6 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
         st.subheader(f"Buchungen im {zeitraum_text}")
         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
         
-        # SQL Abfrage für Tabelle anpassen (LIKE für das ganze Jahr, sonst EQUAL)
         conn = get_connection()
         if globaler_monat.endswith("-ALL"):
             df = pd.read_sql(f"SELECT * FROM transaktionen WHERE konto='{konto_name}' AND monat LIKE '{ausgewaehltes_jahr}-%' ORDER BY datum DESC", conn)
@@ -280,16 +297,12 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
-        # =====================================================================
-        # --- NEU: PDF DOWNLOAD BUTTON NEBEN DEM ZURÜCK-BUTTON ---
-        # =====================================================================
         btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
         with btn_col1:
             if st.button("← Zurück", use_container_width=True):
                 st.session_state.view = 'dashboard'
                 st.rerun()
         with btn_col2:
-            # PDF live generieren bei Klick
             pdf_data = generate_kontoauszug_pdf(
                 konto_name=konto_name,
                 zeitraum_text=zeitraum_text,
@@ -305,4 +318,3 @@ def show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_mona
                 file_name=f"Kontoauszug_{konto_name.replace(' ', '_')}_{zeitraum_text.replace(' ', '_')}.pdf",
                 mime="application/pdf"
             )
-        # =====================================================================

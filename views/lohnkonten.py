@@ -7,6 +7,7 @@ from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
+from utils.market_data import get_exchange_rate
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -90,14 +91,12 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
         st.title(f"Cockpit: {konto_name}")
         st.caption(f"📅 Filter aktiv: {zeitraum_text}")
         
-        # --- KONTOTYP EINMALIG ABFRAGEN ---
         conn = get_connection()
         typ_res = conn.execute("SELECT typ FROM konten WHERE name=?", (konto_name,)).fetchone()
         k_typ = typ_res[0] if typ_res else ""
         conn.close()
         is_lohn = (k_typ == "Lohnkonto")
         
-        # --- BLOCKIERUNG FÜR JAHRES-ANSICHT ---
         if globaler_monat.endswith("-ALL"):
             st.info("💡 Um den Startbestand zu verwalten oder neue Buchungen zu erfassen, wähle bitte links in der Sidebar einen spezifischen Monat aus.")
         else:
@@ -128,7 +127,8 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                 typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
                 with st.form("add_txn_lohn"):
                     c1, c2 = st.columns(2)
-                    betrag = c1.number_input("Betrag", min_value=0.0)
+                    curr_label = "USD" if konto_name == "Yuh USD" else "CHF"
+                    betrag = c1.number_input(f"Betrag ({curr_label})", min_value=0.0)
                     txn_datum = c1.date_input("Buchungsdatum", datetime.now())
                     desc = c2.text_input("Beschreibung / Zweck")
                     modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
@@ -154,10 +154,30 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                         for z_monat in ziel_monate:
                             if typ == "Übertrag (Umbuchung)":
                                 link = f"TR-{z_monat}-{int(time.time()*1000)}"
+                                
+                                w_von = "USD" if von_konto == "Yuh USD" else "CHF"
+                                w_nach = "USD" if nach_konto == "Yuh USD" else "CHF"
+                                
+                                b_von = betrag
+                                b_nach = betrag
+                                d_von = f"Übertrag an {nach_konto}: {desc}"
+                                d_nach = f"Übertrag von {von_konto}: {desc}"
+                                
+                                if w_von != w_nach:
+                                    usd_rate = get_exchange_rate("USD", "CHF")
+                                    if w_von == "USD": 
+                                        b_nach = betrag * usd_rate
+                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                    else:
+                                        b_nach = betrag / usd_rate
+                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                             (von_konto, "Belastung", -betrag, f"Übertrag an {nach_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                             (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                             (nach_konto, "Gutschrift", betrag, f"Übertrag von {von_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                             (nach_konto, "Gutschrift", b_nach, d_nach, datum_str, z_monat, "geplant", modus, link))
                             else:
                                 val = -betrag if typ == "Belastung" else betrag
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -181,7 +201,6 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
         base_monat = start_row[0] if start_row else '2000-01'
         base_betrag = start_row[1] if start_row else 0.0
         
-        # --- BERECHNUNG STARTBESTAND & ENDSALDEN (ANGEPASST) ---
         if is_lohn and not globaler_monat.endswith("-ALL"):
             akt_bestand = get_anfangsbestand(konto_name, globaler_monat)
             startbestand_anzeige = float(akt_bestand)
@@ -210,7 +229,6 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
                 summe_aktuell = base_betrag
                 summe_geplant = base_betrag
 
-        # --- TABELLE RENDERN ---
         if not df.empty:
             render_table_header()
             for _, row in df.iterrows(): 
@@ -228,7 +246,6 @@ def show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
-        # --- PDF & ZURÜCK BUTTONS ---
         btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
         with btn_col1:
             if st.button("← Zurück", use_container_width=True):

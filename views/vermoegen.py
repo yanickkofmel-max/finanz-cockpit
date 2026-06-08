@@ -7,6 +7,7 @@ from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
+from utils.market_data import get_exchange_rate
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -126,10 +127,31 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                         for z_monat in ziel_monate:
                             if typ == "Übertrag (Umbuchung)":
                                 link = f"TR-{z_monat}-{int(time.time()*1000)}"
+                                
+                                # ---> NEU: Dynamische Währungsumrechnung <---
+                                w_von = "USD" if von_konto == "Yuh USD" else "CHF"
+                                w_nach = "USD" if nach_konto == "Yuh USD" else "CHF"
+                                
+                                b_von = betrag
+                                b_nach = betrag
+                                d_von = f"Übertrag an {nach_konto}: {desc}"
+                                d_nach = f"Übertrag von {von_konto}: {desc}"
+                                
+                                if w_von != w_nach:
+                                    usd_rate = get_exchange_rate("USD", "CHF")
+                                    if w_von == "USD": # USD -> CHF
+                                        b_nach = betrag * usd_rate
+                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                    else:              # CHF -> USD
+                                        b_nach = betrag / usd_rate
+                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                             (von_konto, "Belastung", -betrag, f"Übertrag an {nach_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                             (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
-                                             (nach_konto, "Gutschrift", betrag, f"Übertrag von {von_konto}: {desc}", datum_str, z_monat, "geplant", modus, link))
+                                             (nach_konto, "Gutschrift", b_nach, d_nach, datum_str, z_monat, "geplant", modus, link))
                             else:
                                 val = -betrag if typ == "Belastung" else betrag
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -180,15 +202,11 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         
         col1, col2, col3 = st.columns(3)
         if konto_name == "Yuh USD":
-            from utils.market_data import get_exchange_rate
             usd_rate = get_exchange_rate("USD", "CHF")
-            
             col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
             col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
-            
             col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
             col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
-            
             col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
             col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
         else:

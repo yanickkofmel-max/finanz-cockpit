@@ -135,47 +135,57 @@ def show_portfolio():
             if st.form_submit_button("Trade buchen", type="primary"):
                 if ticker and menge > 0 and preis > 0:
                     ticker = ticker.upper().strip()
-                    wechselkurs = get_exchange_rate(waehrung, "CHF")
                     
-                    reiner_wert_chf = menge * preis * wechselkurs
-                    
-                    if aktion == "Kauf":
-                        gesamt_cashflow_chf = reiner_wert_chf + gebuehren
+                    # ---> NEU: TICKER VALIDIERUNG VOR DEM SPEICHERN <---
+                    test_preis = 0.0
+                    with st.spinner("Validiere Ticker-Symbol bei Yahoo Finance..."):
+                        test_preis = get_current_price(ticker)
+                        
+                    if test_preis == 0.0:
+                        st.error(f"❌ Ungültiges Symbol: '{ticker}' konnte nicht gefunden werden. Bitte nutze die Live-Suche (Schritt 0), um das korrekte Kürzel herauszufinden.")
                     else:
-                        gesamt_cashflow_chf = reiner_wert_chf - gebuehren
-                    
-                    datum_str = datum.strftime("%Y-%m-%d")
-                    monat_str = datum.strftime("%Y-%m")
-
-                    conn = get_connection()
-                    
-                    conn.execute('''INSERT INTO portfolio_trades 
-                        (konto, ticker, aktion, menge, kaufpreis_einzeln, waehrung, wechselkurs_kauf, datum, depot, gebuehren) 
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
-                        (cash_konto, ticker, aktion, menge, preis, waehrung, wechselkurs, datum_str, ziel_depot, gebuehren))
-                    
-                    if "Andere" not in cash_konto:
-                        trans_typ = "Belastung" if aktion == "Kauf" else "Gutschrift"
-                        trans_desc = f"Trade {ziel_depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+                        # Wenn Ticker gültig ist -> Normal speichern
+                        wechselkurs = get_exchange_rate(waehrung, "CHF")
                         
-                        if cash_konto == "Yuh USD":
-                            usd_rate = get_exchange_rate("USD", "CHF")
-                            gesamt_cashflow_usd = gesamt_cashflow_chf / usd_rate
-                            trans_betrag = -gesamt_cashflow_usd if aktion == "Kauf" else gesamt_cashflow_usd
+                        reiner_wert_chf = menge * preis * wechselkurs
+                        
+                        if aktion == "Kauf":
+                            gesamt_cashflow_chf = reiner_wert_chf + gebuehren
                         else:
-                            trans_betrag = -gesamt_cashflow_chf if aktion == "Kauf" else gesamt_cashflow_chf
+                            gesamt_cashflow_chf = reiner_wert_chf - gebuehren
                         
-                        conn.execute('''INSERT INTO transaktionen 
-                            (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
-                            (cash_konto, trans_typ, trans_betrag, trans_desc, datum_str, monat_str, "geplant", "Einmalig", ""))
-                    
-                    conn.commit()
-                    conn.close()
-                    upload_db()
-                    st.success("Erfolgreich als geplant verbucht!")
-                    time.sleep(1.0)
-                    st.rerun()
+                        datum_str = datum.strftime("%Y-%m-%d")
+                        monat_str = datum.strftime("%Y-%m")
+
+                        conn = get_connection()
+                        
+                        conn.execute('''INSERT INTO portfolio_trades 
+                            (konto, ticker, aktion, menge, kaufpreis_einzeln, waehrung, wechselkurs_kauf, datum, depot, gebuehren) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''', 
+                            (cash_konto, ticker, aktion, menge, preis, waehrung, wechselkurs, datum_str, ziel_depot, gebuehren))
+                        
+                        if "Andere" not in cash_konto:
+                            trans_typ = "Belastung" if aktion == "Kauf" else "Gutschrift"
+                            trans_desc = f"Trade {ziel_depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+                            
+                            if cash_konto == "Yuh USD":
+                                usd_rate = get_exchange_rate("USD", "CHF")
+                                gesamt_cashflow_usd = gesamt_cashflow_chf / usd_rate
+                                trans_betrag = -gesamt_cashflow_usd if aktion == "Kauf" else gesamt_cashflow_usd
+                            else:
+                                trans_betrag = -gesamt_cashflow_chf if aktion == "Kauf" else gesamt_cashflow_chf
+                            
+                            conn.execute('''INSERT INTO transaktionen 
+                                (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) 
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                                (cash_konto, trans_typ, trans_betrag, trans_desc, datum_str, monat_str, "geplant", "Einmalig", ""))
+                        
+                        conn.commit()
+                        conn.close()
+                        upload_db()
+                        st.success("Erfolgreich als geplant verbucht!")
+                        time.sleep(1.0)
+                        st.rerun()
                 else:
                     st.error("Bitte fülle Ticker, Menge und Preis aus.")
 
@@ -280,9 +290,7 @@ def show_portfolio():
                             c_m1, c_m2, c_m3 = st.columns(3)
                             c_m1.metric(f"Kurs ({data['waehrung']})", f"{live_preis_fremd:,.4f}")
                             
-                            # ---> NEU: WECHSEL DER HAUPTANZEIGE AUF FREMDWÄHRUNG <---
                             if data['waehrung'] != "CHF":
-                                # Umrechnung der fixen CHF-Gebühren in die Fremdwährung (zum aktuellen Live-Kurs)
                                 gebuehren_fremd = data['gebuehren_total'] / live_kurs_chf if live_kurs_chf > 0 else 0
                                 netto_gewinn_fremd = (wert_aktuell_fremd - data['investiert_fremd']) - gebuehren_fremd
                                 gewinn_prozent_fremd = (netto_gewinn_fremd / data['investiert_fremd'] * 100) if data['investiert_fremd'] > 0 else 0
