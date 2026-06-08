@@ -38,6 +38,7 @@ def delete_ticker(ticker, depot):
 @st.dialog("📜 Trade-Historie & Details")
 def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
     st.markdown(f"### {ticker}")
+    # Hier war der Tippfehler: gebueuren_total -> gebuehren_total
     st.caption(f"Depot: **{depot_name}** &nbsp;|&nbsp; Gesamte Gebühren: **{gebuehren_total:.2f} CHF**")
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
@@ -87,12 +88,23 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
         delete_ticker(ticker, depot_name)
 
 def show_portfolio():
+    # --- AUTOMATISCHE DATENBANK-MIGRATION FÜR DIE NEUEN DEPOTNAMEN ---
+    conn = get_connection()
+    conn.execute("UPDATE portfolio_trades SET depot = 'Depot Neon' WHERE depot = 'Neon Invest'")
+    conn.execute("UPDATE portfolio_trades SET depot = 'Depot Yuh' WHERE depot = 'Yuh Invest'")
+    conn.execute("UPDATE transaktionen SET beschreibung = REPLACE(beschreibung, 'Trade Neon Invest:', 'Trade Depot Neon:') WHERE beschreibung LIKE 'Trade Neon Invest:%'")
+    conn.execute("UPDATE transaktionen SET beschreibung = REPLACE(beschreibung, 'Trade Yuh Invest:', 'Trade Depot Yuh:') WHERE beschreibung LIKE 'Trade Yuh Invest:%'")
+    conn.commit()
+    conn.close()
+
     st.title("📈 Aktien & Krypto Portfolio")
     st.caption("Verwalte deine Wertpapiere getrennt nach Depots (Neon, Yuh).")
     st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
 
     vermoegen_konten = get_vermoegen_konten() + ["Andere (Keine Verrechnung)"]
-    verfuegbare_depots = ["Neon Invest", "Yuh Invest", "Anderes Depot"]
+    
+    # --- Umbenannte Depots in der Auswahl ---
+    verfuegbare_depots = ["Depot Neon", "Depot Yuh", "Anderes Depot"]
 
     # --- 1. NEUEN KAUF / VERKAUF ERFASSEN ---
     with st.expander("➕ Neuen Trade (Kauf/Verkauf) erfassen"):
@@ -125,6 +137,8 @@ def show_portfolio():
             waehrung = c5.selectbox("Währung des Wertpapiers", ["USD", "CHF", "EUR"])
             gebuehren = c6.number_input("Total Gebühren/Spesen (in CHF)", min_value=0.00, format="%.2f", step=1.0)
 
+            manuell_kurs = st.number_input("Wechselkurs (optional, falls anders als heute)", min_value=0.0000, format="%.4f", step=0.0100, help="Lass dies auf 0.0000, um automatisch den tagesaktuellen Live-Kurs zu verwenden.")
+
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
             st.markdown("**(3) Zuordnung**")
             c7, c8, c9 = st.columns(3)
@@ -136,7 +150,6 @@ def show_portfolio():
                 if ticker and menge > 0 and preis > 0:
                     ticker = ticker.upper().strip()
                     
-                    # ---> NEU: TICKER VALIDIERUNG VOR DEM SPEICHERN <---
                     test_preis = 0.0
                     with st.spinner("Validiere Ticker-Symbol bei Yahoo Finance..."):
                         test_preis = get_current_price(ticker)
@@ -144,8 +157,10 @@ def show_portfolio():
                     if test_preis == 0.0:
                         st.error(f"❌ Ungültiges Symbol: '{ticker}' konnte nicht gefunden werden. Bitte nutze die Live-Suche (Schritt 0), um das korrekte Kürzel herauszufinden.")
                     else:
-                        # Wenn Ticker gültig ist -> Normal speichern
-                        wechselkurs = get_exchange_rate(waehrung, "CHF")
+                        if manuell_kurs > 0:
+                            wechselkurs = manuell_kurs
+                        else:
+                            wechselkurs = get_exchange_rate(waehrung, "CHF")
                         
                         reiner_wert_chf = menge * preis * wechselkurs
                         
@@ -201,7 +216,7 @@ def show_portfolio():
 
     if not df_trades.empty:
         if 'depot' not in df_trades.columns:
-            df_trades['depot'] = 'Neon Invest'
+            df_trades['depot'] = 'Depot Neon'
             
         alle_depots = df_trades['depot'].unique()
         

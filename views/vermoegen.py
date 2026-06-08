@@ -107,11 +107,17 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                     modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
                     
                     von_konto, nach_konto = None, None
+                    manuell_kurs = 0.0
+                    
                     if typ == "Übertrag (Umbuchung)":
                         st.markdown("---")
                         c3, c4 = st.columns(2)
                         von_konto = c3.selectbox("Von Konto", ALLE_KONTEN, index=ALLE_KONTEN.index(konto_name))
                         nach_konto = c4.selectbox("Nach Konto", [k for k in ALLE_KONTEN if k != von_konto])
+                        
+                        # ---> NEU: Optionales Kurs-Feld beim Übertrag <---
+                        st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
+                        manuell_kurs = st.number_input("Wechselkurs (optional, bei Fremdwährungen)", min_value=0.0000, format="%.4f", step=0.0100, help="Lass dies auf 0.0000, um den tagesaktuellen Live-Kurs zu nutzen.")
 
                     if st.form_submit_button("Buchung speichern"):
                         datum_str = txn_datum.strftime("%Y-%m-%d")
@@ -128,7 +134,6 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                             if typ == "Übertrag (Umbuchung)":
                                 link = f"TR-{z_monat}-{int(time.time()*1000)}"
                                 
-                                # ---> NEU: Dynamische Währungsumrechnung <---
                                 w_von = "USD" if von_konto == "Yuh USD" else "CHF"
                                 w_nach = "USD" if nach_konto == "Yuh USD" else "CHF"
                                 
@@ -138,7 +143,12 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                                 d_nach = f"Übertrag von {von_konto}: {desc}"
                                 
                                 if w_von != w_nach:
-                                    usd_rate = get_exchange_rate("USD", "CHF")
+                                    # ---> NEU: Kurs-Logik beim Übertrag <---
+                                    if manuell_kurs > 0:
+                                        usd_rate = manuell_kurs
+                                    else:
+                                        usd_rate = get_exchange_rate("USD", "CHF")
+                                        
                                     if w_von == "USD": # USD -> CHF
                                         b_nach = betrag * usd_rate
                                         d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
@@ -202,11 +212,15 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         
         col1, col2, col3 = st.columns(3)
         if konto_name == "Yuh USD":
+            from utils.market_data import get_exchange_rate
             usd_rate = get_exchange_rate("USD", "CHF")
+            
             col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
             col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            
             col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
             col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            
             col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
             col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
         else:
