@@ -6,7 +6,7 @@ from db_manager import get_connection
 # In views/konten_verwaltung.py ganz oben anpassen:
 GESCHÜTZTE_KONTEN = [
     "Lohnkonto", "Neon",
-    "Sparkonto", "Neon Invest", "Yuh Invest", "Baloise 3a", "Helvetia 3a", "SwissLife 3a", # <-- Hier anpassen!
+    "Sparkonto", "Neon Invest", "Yuh Invest", "Yuh USD", "Baloise 3a", "Helvetia 3a", "SwissLife 3a",
     "Kleider", "Geschenke", "Ferien", "Auto", "Steuern", "Arzt", "Nebenkosten Wohnung"
 ]
 

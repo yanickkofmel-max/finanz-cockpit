@@ -99,7 +99,8 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                 typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
                 with st.form("add_txn_vermoegen"):
                     c1, c2 = st.columns(2)
-                    betrag = c1.number_input("Betrag", min_value=0.0)
+                    curr_label = "USD" if konto_name == "Yuh USD" else "CHF"
+                    betrag = c1.number_input(f"Betrag ({curr_label})", min_value=0.0)
                     txn_datum = c1.date_input("Buchungsdatum", datetime.now())
                     desc = c2.text_input("Beschreibung / Zweck")
                     modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
@@ -178,13 +179,25 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         st.divider()
         
         col1, col2, col3 = st.columns(3)
-        col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
-        col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
-        col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
+        if konto_name == "Yuh USD":
+            from utils.market_data import get_exchange_rate
+            usd_rate = get_exchange_rate("USD", "CHF")
+            
+            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
+            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            
+            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
+            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            
+            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
+            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+        else:
+            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
+            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
+            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
-        # --- PDF & ZURÜCK BUTTONS ---
         btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
         with btn_col1:
             if st.button("← Zurück", use_container_width=True):

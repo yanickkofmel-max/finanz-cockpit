@@ -8,6 +8,7 @@ from components import render_bank_kachel, get_saldo_bis_monat
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
+from utils.market_data import get_exchange_rate
 
 def get_konten_von_db(typ=None):
     conn = get_connection()
@@ -70,7 +71,6 @@ def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
 def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat):
     zeitraum_text = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
 
-    # --- ANSICHT 1: DAS HAUPT-DASHBOARD ---
     if st.session_state.view == 'dashboard':
         st.title("Dashboard")
         st.caption(f"📊 Finanz-Gesamtübersicht für {zeitraum_text}")
@@ -105,13 +105,17 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             for k_name in vermoegen_konten:
                 s_geo, s_akt = get_saldo_bis_monat(k_name, globaler_monat)
                 if s_akt > 0:
-                    chart_data.append({"Konto": k_name, "Saldo": s_akt})
+                    if k_name == "Yuh USD":
+                        usd_rate = get_exchange_rate("USD", "CHF")
+                        chart_data.append({"Konto": k_name, "Saldo": s_akt * usd_rate})
+                    else:
+                        chart_data.append({"Konto": k_name, "Saldo": s_akt})
             
             if chart_data:
                 df_chart = pd.DataFrame(chart_data)
                 with st.container(border=True):
                     st.markdown("#### 🍩 Vermögensaufteilung (Effektiv verbucht)")
-                    st.caption("Visuelle Übersicht über die prozentuale Verteilung deines effektiv bestätigten Gesamtvermögens.")
+                    st.caption("Visuelle Übersicht über die prozentuale Verteilung deines effektiv bestätigten Gesamtvermögens in CHF.")
                     st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
                     
                     fig = px.pie(
@@ -128,7 +132,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             else:
                 st.info("Noch kein positives, effektiv verbuchtes Vermögen für die Diagramm-Anzeige in diesem Zeitraum vorhanden.")
 
-    # --- ANSICHT 2: COCKPIT-DETAILS ---
     elif st.session_state.view == 'lohn_details':
         konto_name = st.session_state.selected_konto
         st.title(f"Cockpit: {konto_name}")
@@ -173,7 +176,8 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                 typ = st.selectbox("Typ", ["Gutschrift", "Belastung", "Übertrag (Umbuchung)"])
                 with st.form("add_txn_dash"):
                     c1, c2 = st.columns(2)
-                    betrag = c1.number_input("Betrag", min_value=0.0)
+                    curr_label = "USD" if konto_name == "Yuh USD" else "CHF"
+                    betrag = c1.number_input(f"Betrag ({curr_label})", min_value=0.0)
                     txn_datum = c1.date_input("Buchungsdatum", datetime.now())
                     desc = c2.text_input("Beschreibung / Zweck")
                     modus = c2.radio("Modus", ["Einmalig", "Dauerauftrag (bis Jahresende)"])
@@ -246,13 +250,21 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         st.divider()
         
         col1, col2, col3 = st.columns(3)
-        col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
-        col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
-        col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
+        if konto_name == "Yuh USD":
+            usd_rate = get_exchange_rate("USD", "CHF")
+            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
+            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
+            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
+            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+        else:
+            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
+            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
+            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
-        # --- PDF & ZURÜCK BUTTONS (NEU ALIGNIERT) ---
         btn_col1, btn_col2 = st.columns([1, 5], vertical_alignment="center")
         with btn_col1:
             if st.button("← Zurück", key="btn_back_dash", use_container_width=True):
