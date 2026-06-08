@@ -3,7 +3,8 @@ import pandas as pd
 import time
 from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand
-from components import render_bank_kachel, get_saldo_bis_monat
+# ---> HIER IST DER WICHTIGE IMPORT FÜR FORMAT_NUM <---
+from components import render_bank_kachel, get_saldo_bis_monat, format_num
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
@@ -115,7 +116,6 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                         von_konto = c3.selectbox("Von Konto", ALLE_KONTEN, index=ALLE_KONTEN.index(konto_name))
                         nach_konto = c4.selectbox("Nach Konto", [k for k in ALLE_KONTEN if k != von_konto])
                         
-                        # ---> NEU: Optionales Kurs-Feld beim Übertrag <---
                         st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
                         manuell_kurs = st.number_input("Wechselkurs (optional, bei Fremdwährungen)", min_value=0.0000, format="%.4f", step=0.0100, help="Lass dies auf 0.0000, um den tagesaktuellen Live-Kurs zu nutzen.")
 
@@ -143,20 +143,19 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                                 d_nach = f"Übertrag von {von_konto}: {desc}"
                                 
                                 if w_von != w_nach:
-                                    # ---> NEU: Kurs-Logik beim Übertrag <---
                                     if manuell_kurs > 0:
                                         usd_rate = manuell_kurs
                                     else:
                                         usd_rate = get_exchange_rate("USD", "CHF")
                                         
-                                    if w_von == "USD": # USD -> CHF
+                                    if w_von == "USD": 
                                         b_nach = betrag * usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
-                                    else:              # CHF -> USD
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                    else:              
                                         b_nach = betrag / usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} USD @ Kurs {usd_rate:.4f}): {desc}"
 
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
                                              (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
@@ -215,14 +214,14 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             from utils.market_data import get_exchange_rate
             usd_rate = get_exchange_rate("USD", "CHF")
             
-            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
-            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} USD")
+            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(startbestand_anzeige * usd_rate)} CHF</div>", unsafe_allow_html=True)
             
-            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
-            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col2.metric("Geplanter Endsaldo", f"{format_num(summe_geplant)} USD")
+            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(summe_geplant * usd_rate)} CHF</div>", unsafe_allow_html=True)
             
-            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
-            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col3.metric("Aktueller Endsaldo", f"{format_num(summe_aktuell)} USD")
+            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(summe_aktuell * usd_rate)} CHF</div>", unsafe_allow_html=True)
         else:
             col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} CHF")
             col2.metric("Geplanter Endsaldo", f"{format_num(summe_geplant)} CHF")
