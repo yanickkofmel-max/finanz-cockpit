@@ -4,7 +4,8 @@ import plotly.express as px
 import time
 from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand
-from components import render_bank_kachel, get_saldo_bis_monat
+# ---> NEU: Formatter importieren <---
+from components import render_bank_kachel, get_saldo_bis_monat, format_num
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
@@ -19,7 +20,6 @@ def get_konten_von_db(typ=None):
     conn.close()
     return konten
 
-# Hilfsfunktion zur Live-Berechnung des gesamten Portfoliowertes in CHF
 def get_total_portfolio_value_chf():
     conn = get_connection()
     try:
@@ -102,7 +102,6 @@ def get_startbestand_bis_vormonat(konto_name, aktueller_monat_str):
 def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat):
     zeitraum_text = f"Jahr {ausgewaehltes_jahr}" if globaler_monat.endswith("-ALL") else f"{ausgewaehlter_monat_name} {ausgewaehltes_jahr}"
 
-    # --- ANSICHT 1: DAS HAUPT-DASHBOARD ---
     if st.session_state.view == 'dashboard':
         st.title("Dashboard")
         st.caption(f"📊 Finanz-Gesamtübersicht für {zeitraum_text}")
@@ -111,7 +110,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         lohn_konten = get_konten_von_db("Lohnkonto")
         vermoegen_konten = get_konten_von_db("Vermögen")
         
-        # ---> ERWEITERUNG 1: MATHEMATISCHE BERECHNUNG FÜR DAS COCKPIT <---
         total_lohn_chf = 0.0
         for l_name in lohn_konten:
             if globaler_monat.endswith("-ALL"):
@@ -137,14 +135,13 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         portfolio_live_value = get_total_portfolio_value_chf()
         echtes_gesamtvermoegen = total_lohn_chf + total_vermoegen_chf + portfolio_live_value
 
-        # Visuelles Cockpit ganz oben rendern
         with st.container(border=True):
             st.markdown("#### 👑 Dein Vermögens-Cockpit (Net Worth)")
             st.markdown("<div style='height: 5px;'></div>", unsafe_allow_html=True)
             sum_c1, sum_c2, sum_c3 = st.columns(3)
-            sum_c1.metric("💳 Flüssige Mittel (Lohnkonten)", f"{total_lohn_chf:,.2f} CHF")
-            sum_c2.metric("📈 Anlagen (Ersparnisse + Depots)", f"{(total_vermoegen_chf + portfolio_live_value):,.2f} CHF")
-            sum_c3.metric("💰 Echte Net-Worth (Gesamt)", f"{echtes_gesamtvermoegen:,.2f} CHF")
+            sum_c1.metric("💳 Flüssige Mittel (Lohnkonten)", f"{format_num(total_lohn_chf)} CHF")
+            sum_c2.metric("📈 Anlagen (Ersparnisse + Depots)", f"{format_num(total_vermoegen_chf + portfolio_live_value)} CHF")
+            sum_c3.metric("💰 Echte Net-Worth (Gesamt)", f"{format_num(echtes_gesamtvermoegen)} CHF")
         
         st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
 
@@ -163,7 +160,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             st.subheader("📈 Vermögen & Investments")
             st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
             
-            # ---> ERWEITERUNG 2: MIX DER REALEN KACHELN + DIE PORTFOLIO-VIRTUAL-KACHEL <---
             alle_kacheln = list(vermoegen_konten) + ["_VIRTUAL_PORTFOLIO_"]
             for i in range(0, len(alle_kacheln), 3):
                 chunk = alle_kacheln[i:i+3]
@@ -171,7 +167,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                 for j, item in enumerate(chunk):
                     with spalten[j]:
                         if item == "_VIRTUAL_PORTFOLIO_":
-                            # Wunderschöne, farblich angepasste Kachel für das Portfolio
                             st.markdown(f"""
                                 <div class="bank-tile" style="border-color: rgba(46, 204, 113, 0.25);">
                                     <div class="header-box">
@@ -183,7 +178,7 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                                     <div class="grid-box" style="background: rgba(46, 204, 113, 0.03);">
                                         <div class="val-col">
                                             <div class="label-text">Live-Wert</div>
-                                            <div class="val-text" style="color: #2ECC71;">{portfolio_live_value:,.2f} CHF</div>
+                                            <div class="val-text" style="color: #2ECC71;">{format_num(portfolio_live_value)} CHF</div>
                                         </div>
                                         <div class="val-col right">
                                             <div class="label-text">Status</div>
@@ -197,7 +192,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                             render_bank_kachel(item, globaler_monat, show_button=True)
             st.markdown("<div style='height: 24px;'></div>", unsafe_allow_html=True)
             
-            # KREISDIAGRAMM-STRUKTUR
             chart_data = []
             for k_name in vermoegen_konten:
                 s_geo, s_akt = get_saldo_bis_monat(k_name, globaler_monat)
@@ -208,7 +202,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                     else:
                         chart_data.append({"Konto": k_name, "Saldo": s_akt})
             
-            # ---> ERWEITERUNG 3: PORTFOLIO IN DAS KREISDIAGRAMM EINSPEISEN <---
             if portfolio_live_value > 0:
                 chart_data.append({"Konto": "🚀 Wertschriften-Portfolio", "Saldo": portfolio_live_value})
             
@@ -233,7 +226,6 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             else:
                 st.info("Noch kein positives, effektiv verbuchtes Vermögen für die Diagramm-Anzeige in diesem Zeitraum vorhanden.")
 
-    # --- ANSICHT 2: COCKPIT-DETAILS ---
     elif st.session_state.view == 'lohn_details':
         konto_name = st.session_state.selected_konto
         st.title(f"Cockpit: {konto_name}")
@@ -319,12 +311,12 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
                                     usd_rate = get_exchange_rate("USD", "CHF")
                                     if w_von == "USD":
                                         b_nach = betrag * usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} CHF @ Kurs {usd_rate:.4f}): {desc}"
                                     else:
                                         b_nach = betrag / usd_rate
-                                        d_nach = f"Übertrag von {von_konto} (≈ {betrag:,.2f} CHF @ Kurs {usd_rate:.4f}): {desc}"
-                                        d_von = f"Übertrag an {nach_konto} (≈ {b_nach:,.2f} USD @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_nach = f"Übertrag von {von_konto} (≈ {format_num(betrag)} CHF @ Kurs {usd_rate:.4f}): {desc}"
+                                        d_von = f"Übertrag an {nach_konto} (≈ {format_num(b_nach)} USD @ Kurs {usd_rate:.4f}): {desc}"
 
                                 conn.execute("INSERT INTO transaktionen (konto, typ, betrag, beschreibung, datum, monat, status, modus, link_id) VALUES (?,?,?,?,?,?,?,?,?)",
                                              (von_konto, "Belastung", -b_von, d_von, datum_str, z_monat, "geplant", modus, link))
@@ -374,16 +366,16 @@ def show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         col1, col2, col3 = st.columns(3)
         if konto_name == "Yuh USD":
             usd_rate = get_exchange_rate("USD", "CHF")
-            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} USD")
-            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {startbestand_anzeige * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
-            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} USD")
-            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_geplant * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
-            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
-            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
+            col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} USD")
+            col1.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(startbestand_anzeige * usd_rate)} CHF</div>", unsafe_allow_html=True)
+            col2.metric("Geplanter Endsaldo", f"{format_num(summe_geplant)} USD")
+            col2.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(summe_geplant * usd_rate)} CHF</div>", unsafe_allow_html=True)
+            col3.metric("Aktueller Endsaldo", f"{format_num(summe_aktuell)} USD")
+            col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {format_num(summe_aktuell * usd_rate)} CHF</div>", unsafe_allow_html=True)
         else:
-            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
-            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
-            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
+            col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} CHF")
+            col2.metric("Geplanter Endsaldo", f"{format_num(summe_geplant)} CHF")
+            col3.metric("Aktueller Endsaldo", f"{format_num(summe_aktuell)} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         

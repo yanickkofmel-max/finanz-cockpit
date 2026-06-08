@@ -224,9 +224,9 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
             col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} USD")
             col3.markdown(f"<div style='margin-top:-15px; font-size:0.85rem; color:#8A8F98;'>≈ {summe_aktuell * usd_rate:,.2f} CHF</div>", unsafe_allow_html=True)
         else:
-            col1.metric("Startbestand", f"{startbestand_anzeige:,.2f} CHF")
-            col2.metric("Geplanter Endsaldo", f"{summe_geplant:,.2f} CHF")
-            col3.metric("Aktueller Endsaldo", f"{summe_aktuell:,.2f} CHF")
+            col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} CHF")
+            col2.metric("Geplanter Endsaldo", f"{format_num(summe_geplant)} CHF")
+            col3.metric("Aktueller Endsaldo", f"{format_num(summe_aktuell)} CHF")
         
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
         
