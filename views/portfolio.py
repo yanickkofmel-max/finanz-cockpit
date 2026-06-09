@@ -258,15 +258,49 @@ def show_entry_dialog():
                     st.error("Bitte fülle Ticker und Betrag aus.")
 
 def show_portfolio():
-    # CSS für das moderne Fintech-Design mit neuen Flex-Regeln für das Icon
+    # ---> NEUES CSS-DESIGN FÜR DIE KACHELN <---
     st.markdown("""
         <style>
-        .asset-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 15px; transition: all 0.3s ease; }
-        .asset-card:hover { border-color: #2ECC71; background: rgba(46, 204, 113, 0.02); }
-        .asset-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
-        .ticker-badge { background: #2ECC71; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
-        .depot-badge { font-size: 0.75rem; color: #8A8F98; border: 1px solid #8A8F98; padding: 2px 6px; border-radius: 4px; margin-top: 6px; display: inline-block; }
-        .asset-icon { width: 38px; height: 38px; border-radius: 50%; object-fit: contain; background: white; padding: 3px; border: 2px solid rgba(255,255,255,0.1); }
+        .asset-card {
+            background: linear-gradient(145deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 12px;
+            padding: 18px;
+            margin-bottom: 15px;
+            transition: transform 0.2s ease, border-color 0.2s ease;
+        }
+        .asset-card:hover {
+            border-color: rgba(46, 204, 113, 0.4);
+            transform: translateY(-2px);
+        }
+        .ticker-badge {
+            background: rgba(46, 204, 113, 0.15);
+            color: #2ECC71;
+            border: 1px solid rgba(46, 204, 113, 0.3);
+            padding: 4px 8px;
+            border-radius: 6px;
+            font-weight: 700;
+            font-size: 0.85rem;
+            letter-spacing: 0.5px;
+        }
+        .depot-badge {
+            font-size: 0.7rem;
+            color: #8A8F98;
+            background: rgba(255,255,255,0.05);
+            padding: 3px 6px;
+            border-radius: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .asset-icon {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            object-fit: cover;
+            background: #fff;
+            padding: 2px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
         </style>
     """, unsafe_allow_html=True)
 
@@ -482,9 +516,7 @@ def show_portfolio():
                             with cols[idx % 3]:
                                 color = "#2ECC71" if card['netto_gewinn'] >= 0 else "#FF6B6B"
                                 
-                                # ---> LOGO LOGIK: Basis-Kürzel extrahieren und Logo-Links generieren <---
                                 base_ticker = card['ticker'].split('-')[0].split('.')[0].upper()
-                                # Wir versuchen das offizielle Logo von CoinCap zu laden. Wenn es fehlt (404), generiert der Fallback ein Avatar-Icon.
                                 primary_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
                                 fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
                                 
@@ -498,33 +530,40 @@ def show_portfolio():
                                     fx_color = "#2ECC71" if waehrungs_effekt_chf >= 0 else "#FF6B6B"
                                     asset_color = "#2ECC71" if asset_gewinn_chf_heute >= 0 else "#FF6B6B"
                                     
-                                    fx_html = f"""<div style='background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px; margin-top: 15px; border: 1px solid rgba(255,255,255,0.05);'><div style='display: flex; justify-content: space-between; margin-bottom: 5px;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>Kursgewinn</span><span style='font-size: 0.85rem; font-weight: bold; color: {asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display: flex; justify-content: space-between;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size: 0.85rem; font-weight: bold; color: {fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"""
+                                    fx_html = f"<div style='background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px; margin-top: 12px; border: 1px solid rgba(255,255,255,0.05);'><div style='display: flex; justify-content: space-between; margin-bottom: 6px;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>Kursgewinn</span><span style='font-size: 0.85rem; font-weight: bold; color: {asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display: flex; justify-content: space-between;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size: 0.85rem; font-weight: bold; color: {fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"
 
-                                div_html = f"<div style='color: #F1C40F; font-size: 0.8rem; font-weight: bold; margin-top: 12px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
+                                div_html = f"<div style='color: #F1C40F; font-size: 0.8rem; font-weight: bold; margin-top: 10px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
+                                
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color: {'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size: 0.8rem; margin-top: 4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
-                                # ---> HTML KARTEN-AUFBAU MIT LOGO <---
+                                # ---> HTML KARTEN-AUFBAU (KUGELSICHER OHNE ZEILENUMBRÜCHE) <---
                                 html_card = f"""
                                 <div class="asset-card">
-                                    <div class="asset-header">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                                        <div style="display: flex; align-items: center; gap: 10px;">
+                                            <div class="ticker-badge">{card['ticker']}</div>
                                             <img src="{primary_icon}" onerror="this.onerror=null; this.src='{fallback_icon}';" class="asset-icon">
-                                            <div>
-                                                <div class="ticker-badge">{card['ticker']}</div>
-                                                <div class="depot-badge">{card['depot']}</div>
-                                            </div>
                                         </div>
-                                        <div style="text-align: right; color: gray; font-size: 0.85rem; padding-top: 4px;">{format_num(card['menge'], 4)} Stück</div>
+                                        <div style="text-align: right;">
+                                            <div class="depot-badge" style="margin:0;">{card['depot']}</div>
+                                            <div style="color: #8A8F98; font-size: 0.8rem; margin-top: 5px; font-weight: 500;">{format_num(card['menge'], 4)} Stück</div>
+                                        </div>
                                     </div>
-                                    <div style="font-size: 1.6rem; font-weight: bold; margin-top: 10px;">{format_num(card['live_preis_fremd'], 4)} <span style="font-size: 0.9rem; color: gray;">{card['waehrung']}</span></div>
-                                    <div style="font-size: 1.1rem; font-weight: bold; color: {color}; margin-top: 5px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">{format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)</div>
-                                    <div style="margin-top: 10px; display: flex; justify-content: space-between; font-size: 0.85rem;"><span style="color: gray;">Wert in CHF:</span><span style="font-weight: bold;">{format_num(card['wert_aktuell_chf'])} CHF</span></div>
-                                    {fx_html}
-                                    {div_html}
-                                    {realized_html}
+                                    <div style="font-size: 1.6rem; font-weight: 700; line-height: 1.2; color: #FFFFFF;">
+                                        {format_num(card['live_preis_fremd'], 4)} <span style="font-size: 0.9rem; color: #8A8F98; font-weight: 500;">{card['waehrung']}</span>
+                                    </div>
+                                    <div style="font-size: 1.1rem; font-weight: 600; color: {color}; margin-top: 2px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                        {format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)
+                                    </div>
+                                    <div style="margin-top: 12px; display: flex; justify-content: space-between; font-size: 0.9rem;">
+                                        <span style="color: #8A8F98; font-weight: 500;">Wert in CHF</span>
+                                        <span style="font-weight: 700; color: #FFFFFF;">{format_num(card['wert_aktuell_chf'])} CHF</span>
+                                    </div>
+                                    {fx_html}{div_html}{realized_html}
                                 </div>
-                                """
+                                """.replace('\n', '')
+                                
                                 st.markdown(html_card, unsafe_allow_html=True)
                                 
                                 df_depot_hist = df_trades[df_trades['depot'] == card['depot']]
