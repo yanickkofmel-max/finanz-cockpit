@@ -9,12 +9,12 @@ from utils.market_data import get_current_price, get_exchange_rate, search_ticke
 from utils.drive_sync import upload_db
 from components import format_num
 
+# ---> FIX: Funktion umbenannt, um den eingefrorenen Streamlit-Cache sofort zu sprengen! <---
 @st.cache_data(ttl=86400)
-def get_asset_icon(ticker):
-    base_ticker = ticker.split('-')[0].split('.')[0].upper()
+def get_portfolio_asset_icon(ticker):
+    base_ticker = ticker.split('-')[0].split('.')[0].upper().strip()
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
-    # 1. Unsere Datenbank für Aktien (Browser lädt diese direkt, ohne Server-Prüfung!)
     stock_domains = {
         'NOVN': 'novartis.com',
         'ZURN': 'zurich.com',
@@ -36,7 +36,7 @@ def get_asset_icon(ticker):
         'ALC': 'alcon.com',
         'GEBN': 'geberit.com',
         'KNIN': 'kuehne-nagel.com',
-        'SUNN': 'sunrise.ch',    # ---> Hinzugefügt!
+        'SUNN': 'sunrise.ch',
         'AAPL': 'apple.com',
         'MSFT': 'microsoft.com',
         'TSLA': 'tesla.com',
@@ -50,20 +50,21 @@ def get_asset_icon(ticker):
         'MA': 'mastercard.com'
     }
     
+    # 1. Wenn Aktie bekannt, lade das Logo über Googles hochverfügbaren Favicon-Dienst (sz=128 für scharfe Kacheln)
     if base_ticker in stock_domains:
-        return f"https://logo.clearbit.com/{stock_domains[base_ticker]}"
+        return f"https://www.google.com/s2/favicons?sz=128&domain={stock_domains[base_ticker]}"
         
-    # 2. Versuch als Krypto über CoinCap (mit Backend-Prüfung, da generisch erraten)
+    # 2. Wenn nicht in der Liste, versuche Krypto-Logo über CoinCap
     crypto_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
     try:
         req = urllib.request.Request(crypto_icon, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=1.5) as response:
+        with urllib.request.urlopen(req, timeout=1.2) as response:
             if response.status == 200:
                 return crypto_icon
     except Exception:
         pass
         
-    # 3. Fallback (Das edle grüne Initialen-Icon)
+    # 3. Fallback auf die Initialen, falls absolut nichts gefunden wurde
     return fallback_icon
 
 
@@ -180,7 +181,7 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
     st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
     st.divider()
     st.markdown("<div style='font-size: 0.95rem; font-weight: bold; color: #FF6B6B; margin-bottom: 5px;'>⚠️ Gefahrenzone</div>", unsafe_allow_html=True)
-    st.caption(f"Achtung: Dies löscht den kompletten Titel **{ticker}** aus diesem Depot, inklusive aller aufgeführten Käufe, Verkäufe und Dividenden unwiderruflich.")
+    st.markdown(f"Achtung: Dies löscht den kompletten Titel **{ticker}** aus diesem Depot, inklusive aller aufgeführten Käufe, Verkäufe und Dividenden unwiderruflich.")
     if st.button(f"🗑️ Gesamten Titel '{ticker}' löschen", key=f"del_entire_ticker_{ticker}_{depot_name}", use_container_width=True):
         delete_ticker(ticker, depot_name)
 
@@ -597,7 +598,8 @@ def show_portfolio():
                             with cols[idx % 3]:
                                 color = "#2ECC71" if card['netto_gewinn'] >= 0 else "#FF6B6B"
                                 
-                                icon_url = get_asset_icon(card['ticker'])
+                                # ---> HIER WIRD DIE NEUE FUNKTION AUFGERUFEN <---
+                                icon_url = get_portfolio_asset_icon(card['ticker'])
                                 
                                 fx_html = ""
                                 if card['waehrung'] != "CHF":
@@ -612,7 +614,6 @@ def show_portfolio():
                                     fx_html = f"""<div style='background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; margin-top:12px; border:1px solid rgba(255,255,255,0.05);'><div style='display:flex; justify-content:space-between; margin-bottom:6px;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>Kursgewinn</span><span style='font-size:0.85rem; font-weight:bold; color:{asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display:flex; justify-content:space-between;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size:0.85rem; font-weight:bold; color:{fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"""
 
                                 div_html = f"<div style='color:#F1C40F; font-size:0.8rem; font-weight:bold; margin-top:10px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
-                                
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color:{'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size:0.8rem; margin-top:4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
