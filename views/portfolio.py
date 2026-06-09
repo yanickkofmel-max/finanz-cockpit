@@ -9,7 +9,6 @@ from utils.market_data import get_current_price, get_exchange_rate, search_ticke
 from utils.drive_sync import upload_db
 from components import format_num
 
-# ---> FIX: Funktion umbenannt, um den eingefrorenen Streamlit-Cache sofort zu sprengen! <---
 @st.cache_data(ttl=86400)
 def get_portfolio_asset_icon(ticker):
     base_ticker = ticker.split('-')[0].split('.')[0].upper().strip()
@@ -45,12 +44,13 @@ def get_portfolio_asset_icon(ticker):
         'GOOGL': 'google.com',
         'META': 'meta.com',
         'NVDA': 'nvidia.com',
+        'INTC': 'intel.com',     # ---> NEU: Intel Logo hier hinzugefügt!
         'V': 'visa.com',
         'JNJ': 'jnj.com',
         'MA': 'mastercard.com'
     }
     
-    # 1. Wenn Aktie bekannt, lade das Logo über Googles hochverfügbaren Favicon-Dienst (sz=128 für scharfe Kacheln)
+    # 1. Wenn Aktie bekannt, lade das Logo über Googles Favicon-Dienst
     if base_ticker in stock_domains:
         return f"https://www.google.com/s2/favicons?sz=128&domain={stock_domains[base_ticker]}"
         
@@ -64,7 +64,7 @@ def get_portfolio_asset_icon(ticker):
     except Exception:
         pass
         
-    # 3. Fallback auf die Initialen, falls absolut nichts gefunden wurde
+    # 3. Fallback auf die Initialen
     return fallback_icon
 
 
@@ -598,7 +598,6 @@ def show_portfolio():
                             with cols[idx % 3]:
                                 color = "#2ECC71" if card['netto_gewinn'] >= 0 else "#FF6B6B"
                                 
-                                # ---> HIER WIRD DIE NEUE FUNKTION AUFGERUFEN <---
                                 icon_url = get_portfolio_asset_icon(card['ticker'])
                                 
                                 fx_html = ""
@@ -614,6 +613,7 @@ def show_portfolio():
                                     fx_html = f"""<div style='background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; margin-top:12px; border:1px solid rgba(255,255,255,0.05);'><div style='display:flex; justify-content:space-between; margin-bottom:6px;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>Kursgewinn</span><span style='font-size:0.85rem; font-weight:bold; color:{asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display:flex; justify-content:space-between;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size:0.85rem; font-weight:bold; color:{fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"""
 
                                 div_html = f"<div style='color:#F1C40F; font-size:0.8rem; font-weight:bold; margin-top:10px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
+                                
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color:{'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size:0.8rem; margin-top:4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
