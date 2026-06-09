@@ -9,21 +9,65 @@ from utils.market_data import get_current_price, get_exchange_rate, search_ticke
 from utils.drive_sync import upload_db
 from components import format_num
 
+# ---> NEU: Die Dual-Logo Engine (Aktien & Krypto kombiniert) <---
 @st.cache_data(ttl=86400)
 def get_asset_icon(ticker):
     base_ticker = ticker.split('-')[0].split('.')[0].upper()
-    primary_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
+    # 1. Firmen-Logos (Aktien) über direkte Website-Zuordnung
+    stock_domains = {
+        'NOVN': 'novartis.com',
+        'ZURN': 'zurich.com',
+        'SREN': 'swissre.com',
+        'SLHN': 'swisslife.com',
+        'ROG': 'roche.com',
+        'NESN': 'nestle.com',
+        'UBSG': 'ubs.com',
+        'ABBN': 'abb.com',
+        'SGSN': 'sgs.com',
+        'GIVN': 'givaudan.com',
+        'HOLN': 'holcim.com',
+        'SCMN': 'swisscom.ch',
+        'UHR': 'swatchgroup.com',
+        'CFR': 'richemont.com',
+        'BAER': 'juliusbaer.com',
+        'LONN': 'lonza.com',
+        'SIKA': 'sika.com',
+        'ALC': 'alcon.com',
+        'GEBN': 'geberit.com',
+        'KNIN': 'kuehne-nagel.com',
+        'AAPL': 'apple.com',
+        'MSFT': 'microsoft.com',
+        'TSLA': 'tesla.com',
+        'AMZN': 'amazon.com',
+        'GOOG': 'google.com',
+        'GOOGL': 'google.com',
+        'META': 'meta.com',
+        'NVDA': 'nvidia.com',
+        'V': 'visa.com',
+        'JNJ': 'jnj.com',
+        'MA': 'mastercard.com'
+    }
+    
+    # Wenn es eine bekannte Aktie ist, lade das Logo superschnell direkt von der Firmenwebsite
+    if base_ticker in stock_domains:
+        domain = stock_domains[base_ticker]
+        return f"https://logo.clearbit.com/{domain}"
+        
+    # 2. Versuch als Krypto über CoinCap
+    crypto_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
     try:
-        req = urllib.request.Request(primary_icon, method='HEAD', headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(crypto_icon, method='HEAD', headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=1.5) as response:
             if response.status == 200:
-                return primary_icon
+                return crypto_icon
     except Exception:
         pass
     
+    # 3. Fallback (Das edle grüne Initialen-Icon)
     return fallback_icon
+
 
 def get_vermoegen_konten():
     conn = get_connection()
@@ -35,7 +79,6 @@ def delete_trade(trade_id, aktion, menge, ticker, depot, gebuehren, datum_str):
     conn = get_connection()
     conn.execute("DELETE FROM portfolio_trades WHERE id=?", (trade_id,))
     
-    # Alte und neue Transaktionsbeschreibungen prüfen
     desc_1 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
     desc_2 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} USD Geb.)"
     desc_3 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} EUR Geb.)"
@@ -146,7 +189,6 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
 @st.dialog("⚡ Trade / Dividende erfassen", width="large")
 def show_entry_dialog():
     vermoegen_konten = get_vermoegen_konten() + ["Andere (Keine Verrechnung)"]
-    # ---> NEU: Das Trading Depot wurde als Option hinzugefügt! <---
     verfuegbare_depots = ["Depot Neon", "Depot Yuh", "Trading Depot", "Anderes Depot"]
 
     tab_trade, tab_div = st.tabs(["🛒 Kauf / Verkauf", "💸 Dividende verbuchen"])
@@ -337,7 +379,7 @@ def show_portfolio():
             height: 42px;
             border-radius: 50%;
             object-fit: cover;
-            background: #2b2b36;
+            background: #ffffff;
             padding: 2px;
             border: 1px solid rgba(255,255,255,0.1);
         }
@@ -569,7 +611,7 @@ def show_portfolio():
                                     fx_color = "#2ECC71" if waehrungs_effekt_chf >= 0 else "#FF6B6B"
                                     asset_color = "#2ECC71" if asset_gewinn_chf_heute >= 0 else "#FF6B6B"
                                     
-                                    fx_html = f"<div style='background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; margin-top:12px; border:1px solid rgba(255,255,255,0.05);'><div style='display:flex; justify-content:space-between; margin-bottom:6px;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>Kursgewinn</span><span style='font-size:0.85rem; font-weight:bold; color:{asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display:flex; justify-content:space-between;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size:0.85rem; font-weight:bold; color:{fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"
+                                    fx_html = f"""<div style='background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; margin-top:12px; border:1px solid rgba(255,255,255,0.05);'><div style='display:flex; justify-content:space-between; margin-bottom:6px;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>Kursgewinn</span><span style='font-size:0.85rem; font-weight:bold; color:{asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display:flex; justify-content:space-between;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size:0.85rem; font-weight:bold; color:{fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"""
 
                                 div_html = f"<div style='color:#F1C40F; font-size:0.8rem; font-weight:bold; margin-top:10px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
                                 
