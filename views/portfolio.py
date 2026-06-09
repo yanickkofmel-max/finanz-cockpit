@@ -9,15 +9,13 @@ from utils.market_data import get_current_price, get_exchange_rate, search_ticke
 from utils.drive_sync import upload_db
 from components import format_num
 
-# ---> NEU: Backend Logo-Prüfung (Kugelsicher, umgeht HTML-Sperren) <---
-@st.cache_data(ttl=86400) # Speichert das Ergebnis für 24h, damit die App rasend schnell bleibt
+@st.cache_data(ttl=86400)
 def get_asset_icon(ticker):
     base_ticker = ticker.split('-')[0].split('.')[0].upper()
     primary_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
     try:
-        # Wir fragen den Server kurz, ob das Bild wirklich existiert
         req = urllib.request.Request(primary_icon, method='HEAD', headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=1.5) as response:
             if response.status == 200:
@@ -25,7 +23,6 @@ def get_asset_icon(ticker):
     except Exception:
         pass
     
-    # Wenn es nicht existiert (404), schicken wir das generierte Avatar-Bild zurück
     return fallback_icon
 
 def get_vermoegen_konten():
@@ -34,12 +31,21 @@ def get_vermoegen_konten():
     conn.close()
     return konten
 
-def delete_trade(trade_id, aktion, menge, ticker, depot, gebuehren, datum_str):
+def delete_trade(trade_id):
     conn = get_connection()
-    conn.execute("DELETE FROM portfolio_trades WHERE id=?", (trade_id,))
-    trans_desc = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
-    conn.execute("DELETE FROM transaktionen WHERE beschreibung=? AND datum=?", (trans_desc, datum_str))
-    conn.commit()
+    row = conn.execute("SELECT * FROM portfolio_trades WHERE id=?", (trade_id,)).fetchone()
+    if row:
+        konto, ticker, aktion, menge, kaufpreis, waehrung, wechselkurs, datum, depot, gebuehren = row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
+        
+        # ---> NEU: Unterstützt alte CHF-Bezeichnungen UND neue Fremdwährungs-Bezeichnungen beim Löschen <---
+        desc_old_chf = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+        desc_new = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} {waehrung} Geb.)"
+        desc_div_old = f"Dividende {depot}: {ticker} (Abzug {gebuehren} CHF Steuern/Geb.)"
+        desc_div_new = f"Dividende {depot}: {ticker} (Abzug {gebuehren} {waehrung} Steuern/Geb.)"
+        
+        conn.execute("DELETE FROM transaktionen WHERE beschreibung IN (?, ?, ?, ?) AND datum=?", (desc_old_chf, desc_new, desc_div_old, desc_div_new, datum))
+        conn.execute("DELETE FROM portfolio_trades WHERE id=?", (trade_id,))
+        conn.commit()
     conn.close()
     upload_db()
     st.rerun()
@@ -48,8 +54,18 @@ def delete_ticker(ticker, depot):
     conn = get_connection()
     df_trades = pd.read_sql("SELECT * FROM portfolio_trades WHERE ticker=? AND depot=?", conn, params=(ticker, depot))
     for _, row in df_trades.iterrows():
-        trans_desc = f"Trade {row['depot']}: {row['aktion']} {row['menge']} {row['ticker']} (inkl. {row.get('gebuehren', 0.0)} CHF Geb.)"
-        conn.execute("DELETE FROM transaktionen WHERE beschreibung=? AND datum=?", (trans_desc, row['datum']))
+        aktion = row['aktion']
+        menge = row['menge']
+        gebuehren = row.get('gebuehren', 0.0)
+        waehrung = row['waehrung']
+        datum = row['datum']
+        
+        desc_old_chf = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+        desc_new = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} {waehrung} Geb.)"
+        desc_div_old = f"Dividende {depot}: {ticker} (Abzug {gebuehren} CHF Steuern/Geb.)"
+        desc_div_new = f"Dividende {depot}: {ticker} (Abzug {gebuehren} {waehrung} Steuern/Geb.)"
+        
+        conn.execute("DELETE FROM transaktionen WHERE beschreibung IN (?, ?, ?, ?) AND datum=?", (desc_old_chf, desc_new, desc_div_old, desc_div_new, datum))
     
     conn.execute("DELETE FROM portfolio_trades WHERE ticker=? AND depot=?", (ticker, depot))
     conn.commit()
@@ -58,9 +74,9 @@ def delete_ticker(ticker, depot):
     st.rerun()
 
 @st.dialog("📜 Trade-Historie & Details")
-def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
+def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
     st.markdown(f"### {ticker}")
-    st.caption(f"Depot: **{depot_name}** &nbsp;|&nbsp; Gesamte Gebühren/Steuern: **{format_num(gebuehren_total)} CHF**")
+    st.caption(f"Depot: **{depot_name}** &nbsp;|&nbsp; Gesamte Gebühren/Steuern: **{format_num(gebuehren_total_chf)} CHF**")
     st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
 
     current_menge = 0.0
@@ -73,7 +89,10 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
             trade_fremd = tr_row['menge'] * tr_row['kaufpreis_einzeln']
             
         trade_chf_rein = trade_fremd * tr_row['wechselkurs_kauf']
-        geb = tr_row.get('gebuehren', 0.0)
+        
+        # ---> NEU: Gebühren werden in Fremdwährung und CHF umgerechnet <---
+        geb_fremd = tr_row.get('gebuehren', 0.0)
+        geb_chf = geb_fremd * tr_row['wechselkurs_kauf']
         
         realisiert_str = ""
         menge_str = f"{format_num(tr_row['menge'], 4)} Stück à {format_num(tr_row['kaufpreis_einzeln'], 4)} {tr_row['waehrung']}"
@@ -81,13 +100,13 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
         if tr_row['aktion'] == "Kauf":
             current_menge += tr_row['menge']
             current_invest_chf += trade_chf_rein
-            total_chf = trade_chf_rein + geb
+            total_chf = trade_chf_rein + geb_chf
             bg_color = "rgba(255, 107, 107, 0.08)" 
             border_color = "#FF6B6B"
             aktion_text = "Total Belastung"
             
         elif tr_row['aktion'] == "Verkauf":
-            total_chf = trade_chf_rein - geb
+            total_chf = trade_chf_rein - geb_chf
             bg_color = "rgba(46, 204, 113, 0.08)" 
             border_color = "#2ECC71"
             aktion_text = "Total Gutschrift"
@@ -95,7 +114,7 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
             if current_menge > 0:
                 avg_cost = current_invest_chf / current_menge
                 cost_sold = avg_cost * tr_row['menge']
-                realisiert_trade = trade_chf_rein - cost_sold - geb
+                realisiert_trade = trade_chf_rein - cost_sold - geb_chf
                 current_invest_chf -= cost_sold
                 
                 r_color = "#2ECC71" if realisiert_trade >= 0 else "#FF6B6B"
@@ -104,7 +123,7 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
             current_menge -= tr_row['menge']
             
         elif tr_row['aktion'] == "Dividende":
-            total_chf = trade_chf_rein - geb
+            total_chf = trade_chf_rein - geb_chf
             bg_color = "rgba(241, 196, 15, 0.08)" 
             border_color = "#F1C40F"
             aktion_text = "Netto-Dividende"
@@ -112,14 +131,15 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total):
             realisiert_str = f"<div style='margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.05); font-size: 0.85rem; color: #F1C40F;'><strong>Ertrag in die Tasche: {format_num(total_chf, 2, True)} CHF</strong></div>"
             
         fremd_str = f" <span style='font-size:0.8rem; font-weight:normal; color:gray;'>(≈ {format_num(trade_fremd)} {tr_row['waehrung']})</span>" if tr_row['waehrung'] != "CHF" else ""
+        geb_str = f"(Spesen/Steuern: {format_num(geb_fremd)} {tr_row['waehrung']})" if geb_fremd > 0 else ""
 
-        html_card = f"""<div style='background-color: {bg_color}; padding: 12px; border-radius: 6px; border-left: 4px solid {border_color}; margin-bottom: 10px;'><div style='font-size: 0.9rem; margin-bottom: 4px;'><strong>{tr_row['datum']} &nbsp;|&nbsp; {tr_row['aktion']}</strong></div><div style='font-size: 0.85rem; color: #E2E8F0;'>{menge_str} <span style='color: gray;'>(Spesen/Steuern: {format_num(geb)} CHF)</span></div><div style='font-size: 0.95rem; font-weight: 600; margin-top: 6px;'>{aktion_text}: {format_num(total_chf)} CHF {fremd_str}</div>{realisiert_str}</div>"""
+        html_card = f"""<div style='background-color: {bg_color}; padding: 12px; border-radius: 6px; border-left: 4px solid {border_color}; margin-bottom: 10px;'><div style='font-size: 0.9rem; margin-bottom: 4px;'><strong>{tr_row['datum']} &nbsp;|&nbsp; {tr_row['aktion']}</strong></div><div style='font-size: 0.85rem; color: #E2E8F0;'>{menge_str} <span style='color: gray;'>{geb_str}</span></div><div style='font-size: 0.95rem; font-weight: 600; margin-top: 6px;'>{aktion_text}: {format_num(total_chf)} CHF {fremd_str}</div>{realisiert_str}</div>"""
         
         hc1, hc2 = st.columns([4, 1], vertical_alignment="center")
         hc1.markdown(html_card, unsafe_allow_html=True)
         with hc2:
             if st.button("🗑️", key=f"del_tr_mod_{tr_row['id']}", help="Nur diesen Trade löschen", use_container_width=True):
-                delete_trade(tr_row['id'], tr_row['aktion'], tr_row['menge'], tr_row['ticker'], tr_row['depot'], tr_row['gebuehren'], tr_row['datum'])
+                delete_trade(tr_row['id'])
 
     st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
     st.divider()
@@ -161,7 +181,9 @@ def show_entry_dialog():
             c4, c5, c6 = st.columns(3)
             preis = c4.number_input("Preis pro Stück (Fremdwährung)", min_value=0.00, format="%.4f", step=1.0)
             waehrung = c5.selectbox("Währung des Wertpapiers", ["USD", "CHF", "EUR"])
-            gebuehren = c6.number_input("Total Gebühren/Spesen (in CHF)", min_value=0.00, format="%.2f", step=1.0)
+            
+            # ---> NEU: Dynamische Gebühren (Fremdwährung) <---
+            gebuehren = c6.number_input("Total Gebühren/Spesen (in gewählter Währung)", min_value=0.00, format="%.2f", step=1.0)
 
             manuell_kurs = st.number_input("Wechselkurs (optional, falls anders als heute)", min_value=0.0000, format="%.4f", step=0.0100)
 
@@ -184,8 +206,9 @@ def show_entry_dialog():
                     else:
                         wechselkurs = manuell_kurs if manuell_kurs > 0 else get_exchange_rate(waehrung, "CHF")
                         reiner_wert_chf = menge * preis * wechselkurs
+                        gebuehren_chf = gebuehren * wechselkurs
                         
-                        gesamt_cashflow_chf = reiner_wert_chf + gebuehren if aktion == "Kauf" else reiner_wert_chf - gebuehren
+                        gesamt_cashflow_chf = reiner_wert_chf + gebuehren_chf if aktion == "Kauf" else reiner_wert_chf - gebuehren_chf
                         datum_str = datum.strftime("%Y-%m-%d")
                         monat_str = datum.strftime("%Y-%m")
 
@@ -197,7 +220,7 @@ def show_entry_dialog():
                         
                         if "Andere" not in cash_konto:
                             trans_typ = "Belastung" if aktion == "Kauf" else "Gutschrift"
-                            trans_desc = f"Trade {ziel_depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+                            trans_desc = f"Trade {ziel_depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} {waehrung} Geb.)"
                             
                             if cash_konto == "Yuh USD":
                                 usd_rate = get_exchange_rate("USD", "CHF")
@@ -231,7 +254,7 @@ def show_entry_dialog():
             cd3, cd4, cd5 = st.columns(3)
             div_betrag = cd3.number_input("Brutto-Dividende (Fremdwährung)", min_value=0.00, format="%.2f", step=1.0)
             div_waehrung = cd4.selectbox("Währung der Dividende", ["USD", "CHF", "EUR"], key="div_waehrung")
-            div_steuern = cd5.number_input("Quellensteuer/Spesen (in CHF)", min_value=0.00, format="%.2f", step=1.0)
+            div_steuern = cd5.number_input("Quellensteuer/Spesen (in gewählter Währung)", min_value=0.00, format="%.2f", step=1.0)
 
             div_kurs = st.number_input("Wechselkurs (optional, falls anders als heute)", min_value=0.0000, format="%.4f", step=0.0100, key="div_kurs")
 
@@ -247,7 +270,9 @@ def show_entry_dialog():
                     wechselkurs_div = div_kurs if div_kurs > 0 else get_exchange_rate(div_waehrung, "CHF")
                     
                     brutto_chf = div_betrag * wechselkurs_div
-                    netto_chf = brutto_chf - div_steuern
+                    steuern_chf = div_steuern * wechselkurs_div
+                    netto_chf = brutto_chf - steuern_chf
+                    
                     datum_str = div_datum.strftime("%Y-%m-%d")
                     monat_str = div_datum.strftime("%Y-%m")
 
@@ -258,7 +283,7 @@ def show_entry_dialog():
                         (div_cash, div_ticker, "Dividende", 0.0, div_betrag, div_waehrung, wechselkurs_div, datum_str, div_depot, div_steuern))
                     
                     if "Andere" not in div_cash:
-                        trans_desc = f"Dividende {div_depot}: {div_ticker} (Abzug {div_steuern} CHF Steuern/Geb.)"
+                        trans_desc = f"Dividende {div_depot}: {div_ticker} (Abzug {div_steuern} {div_waehrung} Steuern/Geb.)"
                         
                         if div_cash == "Yuh USD":
                             usd_rate = get_exchange_rate("USD", "CHF")
@@ -278,7 +303,6 @@ def show_entry_dialog():
                     st.error("Bitte fülle Ticker und Betrag aus.")
 
 def show_portfolio():
-    # ---> DAS NEUE PREMIUM NEO-BROKER CSS DESIGN <---
     st.markdown("""
         <style>
         .asset-card {
@@ -375,7 +399,9 @@ def show_portfolio():
             if t not in portfolio:
                 portfolio[t] = {'menge': 0.0, 'investiert_chf': 0.0, 'investiert_fremd': 0.0, 'gebuehren_total': 0.0, 'waehrung': row['waehrung'], 'realisiert_chf': 0.0, 'dividenden_chf': 0.0}
             
-            geb = row.get('gebuehren', 0.0)
+            # ---> WICHTIG: Gebühren werden hier in CHF umgerechnet für die globalen Summen <---
+            geb_fremd = row.get('gebuehren', 0.0)
+            geb_chf = geb_fremd * row['wechselkurs_kauf']
             
             if row['aktion'] == 'Kauf':
                 trade_wert_fremd = row['menge'] * row['kaufpreis_einzeln']
@@ -383,7 +409,7 @@ def show_portfolio():
                 portfolio[t]['menge'] += row['menge']
                 portfolio[t]['investiert_chf'] += trade_wert_chf 
                 portfolio[t]['investiert_fremd'] += trade_wert_fremd
-                portfolio[t]['gebuehren_total'] += geb
+                portfolio[t]['gebuehren_total'] += geb_chf
                 
             elif row['aktion'] == 'Verkauf':
                 trade_wert_fremd = row['menge'] * row['kaufpreis_einzeln']
@@ -395,20 +421,20 @@ def show_portfolio():
                     cost_sold_chf = durchschnittskosten_chf * row['menge']
                     cost_sold_fremd = durchschnittskosten_fremd * row['menge']
                     
-                    realisiert_trade = trade_wert_chf - cost_sold_chf - geb
+                    realisiert_trade = trade_wert_chf - cost_sold_chf - geb_chf
                     portfolio[t]['realisiert_chf'] += realisiert_trade
                     
                     portfolio[t]['investiert_chf'] -= cost_sold_chf
                     portfolio[t]['investiert_fremd'] -= cost_sold_fremd
                     
                 portfolio[t]['menge'] -= row['menge']
-                portfolio[t]['gebuehren_total'] += geb 
+                portfolio[t]['gebuehren_total'] += geb_chf 
                 
             elif row['aktion'] == 'Dividende':
-                div_netto_chf = (row['kaufpreis_einzeln'] * row['wechselkurs_kauf']) - geb
+                div_netto_chf = (row['kaufpreis_einzeln'] * row['wechselkurs_kauf']) - geb_chf
                 portfolio[t]['dividenden_chf'] += div_netto_chf
                 portfolio[t]['realisiert_chf'] += div_netto_chf
-                portfolio[t]['gebuehren_total'] += geb 
+                portfolio[t]['gebuehren_total'] += geb_chf 
 
         depot_investiert = 0.0
         depot_aktuell = 0.0
@@ -538,7 +564,6 @@ def show_portfolio():
                             with cols[idx % 3]:
                                 color = "#2ECC71" if card['netto_gewinn'] >= 0 else "#FF6B6B"
                                 
-                                # ---> LOGO LOGIK: Perfekter Fallback aus dem Backend <---
                                 icon_url = get_asset_icon(card['ticker'])
                                 
                                 fx_html = ""
@@ -557,7 +582,6 @@ def show_portfolio():
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color: {'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size: 0.8rem; margin-top: 4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
-                                # ---> PRO DESIGN HEADER (Logo Links, Ticker daneben, Kugelsicheres HTML) <---
                                 html_card = f"""
                                 <div class="asset-card">
                                     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px;">
@@ -621,6 +645,6 @@ def show_portfolio():
             c_h4.write(f"{format_num(val)} {row['waehrung']}")
             
             if c_h5.button("🗑️", key=f"del_global_hist_{row['id']}", help="Diesen Trade unwiderruflich löschen"):
-                delete_trade(row['id'], row['aktion'], row['menge'], row['ticker'], row['depot'], row['gebuehren'], row['datum'])
+                delete_trade(row['id'])
             st.markdown("<div style='margin-bottom: -15px;'></div>", unsafe_allow_html=True)
             st.divider()
