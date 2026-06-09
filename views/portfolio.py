@@ -31,20 +31,17 @@ def get_vermoegen_konten():
     conn.close()
     return konten
 
-def delete_trade(trade_id):
+def delete_trade(trade_id, aktion, menge, ticker, depot, gebuehren, datum_str):
     conn = get_connection()
-    row = conn.execute("SELECT * FROM portfolio_trades WHERE id=?", (trade_id,)).fetchone()
-    if row:
-        konto, ticker, aktion, menge, kaufpreis, waehrung, wechselkurs, datum, depot, gebuehren = row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
-        
-        desc_old_chf = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
-        desc_new = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} {waehrung} Geb.)"
-        desc_div_old = f"Dividende {depot}: {ticker} (Abzug {gebuehren} CHF Steuern/Geb.)"
-        desc_div_new = f"Dividende {depot}: {ticker} (Abzug {gebuehren} {waehrung} Steuern/Geb.)"
-        
-        conn.execute("DELETE FROM transaktionen WHERE beschreibung IN (?, ?, ?, ?) AND datum=?", (desc_old_chf, desc_new, desc_div_old, desc_div_new, datum))
-        conn.execute("DELETE FROM portfolio_trades WHERE id=?", (trade_id,))
-        conn.commit()
+    conn.execute("DELETE FROM portfolio_trades WHERE id=?", (trade_id,))
+    
+    # Alte und neue Transaktionsbeschreibungen prüfen
+    desc_1 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
+    desc_2 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} USD Geb.)"
+    desc_3 = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} EUR Geb.)"
+    
+    conn.execute("DELETE FROM transaktionen WHERE beschreibung IN (?, ?, ?) AND datum=?", (desc_1, desc_2, desc_3, datum_str))
+    conn.commit()
     conn.close()
     upload_db()
     st.rerun()
@@ -137,7 +134,7 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
         hc1.markdown(html_card, unsafe_allow_html=True)
         with hc2:
             if st.button("🗑️", key=f"del_tr_mod_{tr_row['id']}", help="Nur diesen Trade löschen", use_container_width=True):
-                delete_trade(tr_row['id'])
+                delete_trade(tr_row['id'], tr_row['aktion'], tr_row['menge'], tr_row['ticker'], tr_row['depot'], tr_row['gebuehren'], tr_row['datum'])
 
     st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
     st.divider()
@@ -149,7 +146,8 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
 @st.dialog("⚡ Trade / Dividende erfassen", width="large")
 def show_entry_dialog():
     vermoegen_konten = get_vermoegen_konten() + ["Andere (Keine Verrechnung)"]
-    verfuegbare_depots = ["Depot Neon", "Depot Yuh", "Anderes Depot"]
+    # ---> NEU: Das Trading Depot wurde als Option hinzugefügt! <---
+    verfuegbare_depots = ["Depot Neon", "Depot Yuh", "Trading Depot", "Anderes Depot"]
 
     tab_trade, tab_div = st.tabs(["🛒 Kauf / Verkauf", "💸 Dividende verbuchen"])
     
@@ -322,6 +320,7 @@ def show_portfolio():
             font-weight: 700;
             font-size: 0.8rem;
             letter-spacing: 0.5px;
+            line-height: 1;
             display: inline-block;
         }
         .depot-badge {
@@ -330,11 +329,12 @@ def show_portfolio():
             background: rgba(255,255,255,0.05);
             padding: 2px 6px;
             border-radius: 4px;
+            line-height: 1;
             display: inline-block;
         }
         .asset-icon {
-            width: 28px;
-            height: 28px;
+            width: 42px;
+            height: 42px;
             border-radius: 50%;
             object-fit: cover;
             background: #2b2b36;
@@ -576,7 +576,6 @@ def show_portfolio():
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color:{'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size:0.8rem; margin-top:4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
-                                # ---> LÜCKENLOSES HTML MIT NEUEM LOGO-LAYOUT <---
                                 html_card = (
                                     f"<div class='asset-card'>"
                                     f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:12px;'>"
