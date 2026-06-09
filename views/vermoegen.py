@@ -3,11 +3,11 @@ import pandas as pd
 import time
 from datetime import datetime
 from db_manager import get_connection, get_anfangsbestand
-# ---> HIER IST DER WICHTIGE IMPORT FÜR FORMAT_NUM <---
 from components import render_bank_kachel, get_saldo_bis_monat, format_num
 from theme import render_transaction_row, render_table_header
 from utils.drive_sync import upload_db 
 from utils.pdf_generator import generate_kontoauszug_pdf
+# ---> HIER ist der einzige, korrekte Import für den Wechselkurs <---
 from utils.market_data import get_exchange_rate
 
 def get_konten_von_db(typ=None):
@@ -211,7 +211,7 @@ def show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
         
         col1, col2, col3 = st.columns(3)
         if konto_name == "Yuh USD":
-            from utils.market_data import get_exchange_rate
+            # ---> FIX: Der fehlerhafte lokale Import wurde hier gelöscht <---
             usd_rate = get_exchange_rate("USD", "CHF")
             
             col1.metric("Startbestand", f"{format_num(startbestand_anzeige)} USD")
