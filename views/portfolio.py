@@ -14,6 +14,7 @@ def get_asset_icon(ticker):
     base_ticker = ticker.split('-')[0].split('.')[0].upper()
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
+    # 1. Unsere Datenbank für Aktien (Browser lädt diese direkt, ohne Server-Prüfung!)
     stock_domains = {
         'NOVN': 'novartis.com',
         'ZURN': 'zurich.com',
@@ -35,6 +36,7 @@ def get_asset_icon(ticker):
         'ALC': 'alcon.com',
         'GEBN': 'geberit.com',
         'KNIN': 'kuehne-nagel.com',
+        'SUNN': 'sunrise.ch',    # ---> Hinzugefügt!
         'AAPL': 'apple.com',
         'MSFT': 'microsoft.com',
         'TSLA': 'tesla.com',
@@ -48,22 +50,20 @@ def get_asset_icon(ticker):
         'MA': 'mastercard.com'
     }
     
-    # URL bestimmen (Aktie oder Krypto)
     if base_ticker in stock_domains:
-        target_url = f"https://logo.clearbit.com/{stock_domains[base_ticker]}"
-    else:
-        target_url = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
+        return f"https://logo.clearbit.com/{stock_domains[base_ticker]}"
         
-    # ---> FIX: Strikte Prüfung, ob das Bild WIRKLICH existiert <---
+    # 2. Versuch als Krypto über CoinCap (mit Backend-Prüfung, da generisch erraten)
+    crypto_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
     try:
-        req = urllib.request.Request(target_url, headers={'User-Agent': 'Mozilla/5.0'})
+        req = urllib.request.Request(crypto_icon, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=1.5) as response:
             if response.status == 200:
-                return target_url
+                return crypto_icon
     except Exception:
         pass
         
-    # Fällt IMMER auf die Initialen zurück, wenn ein Fehler auftritt
+    # 3. Fallback (Das edle grüne Initialen-Icon)
     return fallback_icon
 
 
@@ -360,6 +360,7 @@ def show_portfolio():
             font-weight: 700;
             font-size: 0.8rem;
             letter-spacing: 0.5px;
+            line-height: 1;
             display: inline-block;
         }
         .depot-badge {
@@ -368,6 +369,7 @@ def show_portfolio():
             background: rgba(255,255,255,0.05);
             padding: 2px 6px;
             border-radius: 4px;
+            line-height: 1;
             display: inline-block;
         }
         .asset-icon {
@@ -375,7 +377,7 @@ def show_portfolio():
             height: 42px;
             border-radius: 50%;
             object-fit: cover;
-            background: #2b2b36;
+            background: #ffffff;
             padding: 2px;
             border: 1px solid rgba(255,255,255,0.1);
         }
