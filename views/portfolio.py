@@ -37,7 +37,6 @@ def delete_trade(trade_id):
     if row:
         konto, ticker, aktion, menge, kaufpreis, waehrung, wechselkurs, datum, depot, gebuehren = row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
         
-        # ---> NEU: Unterstützt alte CHF-Bezeichnungen UND neue Fremdwährungs-Bezeichnungen beim Löschen <---
         desc_old_chf = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} CHF Geb.)"
         desc_new = f"Trade {depot}: {aktion} {menge} {ticker} (inkl. {gebuehren} {waehrung} Geb.)"
         desc_div_old = f"Dividende {depot}: {ticker} (Abzug {gebuehren} CHF Steuern/Geb.)"
@@ -90,7 +89,6 @@ def show_history_dialog(ticker, depot_name, df_history, gebuehren_total_chf):
             
         trade_chf_rein = trade_fremd * tr_row['wechselkurs_kauf']
         
-        # ---> NEU: Gebühren werden in Fremdwährung und CHF umgerechnet <---
         geb_fremd = tr_row.get('gebuehren', 0.0)
         geb_chf = geb_fremd * tr_row['wechselkurs_kauf']
         
@@ -181,8 +179,6 @@ def show_entry_dialog():
             c4, c5, c6 = st.columns(3)
             preis = c4.number_input("Preis pro Stück (Fremdwährung)", min_value=0.00, format="%.4f", step=1.0)
             waehrung = c5.selectbox("Währung des Wertpapiers", ["USD", "CHF", "EUR"])
-            
-            # ---> NEU: Dynamische Gebühren (Fremdwährung) <---
             gebuehren = c6.number_input("Total Gebühren/Spesen (in gewählter Währung)", min_value=0.00, format="%.2f", step=1.0)
 
             manuell_kurs = st.number_input("Wechselkurs (optional, falls anders als heute)", min_value=0.0000, format="%.4f", step=0.0100)
@@ -326,7 +322,6 @@ def show_portfolio():
             font-weight: 700;
             font-size: 0.8rem;
             letter-spacing: 0.5px;
-            line-height: 1;
             display: inline-block;
         }
         .depot-badge {
@@ -335,12 +330,11 @@ def show_portfolio():
             background: rgba(255,255,255,0.05);
             padding: 2px 6px;
             border-radius: 4px;
-            line-height: 1;
             display: inline-block;
         }
         .asset-icon {
-            width: 42px;
-            height: 42px;
+            width: 28px;
+            height: 28px;
             border-radius: 50%;
             object-fit: cover;
             background: #2b2b36;
@@ -399,7 +393,6 @@ def show_portfolio():
             if t not in portfolio:
                 portfolio[t] = {'menge': 0.0, 'investiert_chf': 0.0, 'investiert_fremd': 0.0, 'gebuehren_total': 0.0, 'waehrung': row['waehrung'], 'realisiert_chf': 0.0, 'dividenden_chf': 0.0}
             
-            # ---> WICHTIG: Gebühren werden hier in CHF umgerechnet für die globalen Summen <---
             geb_fremd = row.get('gebuehren', 0.0)
             geb_chf = geb_fremd * row['wechselkurs_kauf']
             
@@ -576,41 +569,32 @@ def show_portfolio():
                                     fx_color = "#2ECC71" if waehrungs_effekt_chf >= 0 else "#FF6B6B"
                                     asset_color = "#2ECC71" if asset_gewinn_chf_heute >= 0 else "#FF6B6B"
                                     
-                                    fx_html = f"""<div style='background: rgba(0,0,0,0.2); border-radius: 6px; padding: 10px; margin-top: 15px; border: 1px solid rgba(255,255,255,0.05);'><div style='display: flex; justify-content: space-between; margin-bottom: 5px;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>Kursgewinn</span><span style='font-size: 0.85rem; font-weight: bold; color: {asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display: flex; justify-content: space-between;'><span style='font-size: 0.7rem; color: #8A8F98; text-transform: uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size: 0.85rem; font-weight: bold; color: {fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"""
+                                    fx_html = f"<div style='background:rgba(0,0,0,0.2); border-radius:6px; padding:10px; margin-top:12px; border:1px solid rgba(255,255,255,0.05);'><div style='display:flex; justify-content:space-between; margin-bottom:6px;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>Kursgewinn</span><span style='font-size:0.85rem; font-weight:bold; color:{asset_color};'>{format_num(asset_gewinn_chf_heute, 2, True)} CHF</span></div><div style='display:flex; justify-content:space-between;'><span style='font-size:0.7rem; color:#8A8F98; text-transform:uppercase;'>FX-Effekt ({card['waehrung']})</span><span style='font-size:0.85rem; font-weight:bold; color:{fx_color};'>{format_num(waehrungs_effekt_chf, 2, True)} CHF</span></div></div>"
 
-                                div_html = f"<div style='color: #F1C40F; font-size: 0.8rem; font-weight: bold; margin-top: 12px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
-                                val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
-                                realized_html = f"<div style='color: {'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size: 0.8rem; margin-top: 4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
-
-                                html_card = f"""
-                                <div class="asset-card">
-                                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; border-bottom: 1px solid rgba(255,255,255,0.05); padding-bottom: 12px;">
-                                        <div style="display: flex; align-items: center; gap: 12px;">
-                                            <img src="{icon_url}" class="asset-icon">
-                                            <div style="display: flex; flex-direction: column; gap: 4px;">
-                                                <span class="ticker-badge" style="margin: 0; width: fit-content;">{card['ticker']}</span>
-                                                <span class="depot-badge" style="margin: 0; width: fit-content;">{card['depot']}</span>
-                                            </div>
-                                        </div>
-                                        <div style="text-align: right;">
-                                            <div style="font-size: 1.1rem; font-weight: bold; color: #fff;">{format_num(card['menge'], 4)}</div>
-                                            <div style="font-size: 0.75rem; color: #8A8F98; text-transform: uppercase;">Bestand</div>
-                                        </div>
-                                    </div>
-                                    <div style="font-size: 1.8rem; font-weight: 700; line-height: 1.2; color: #FFFFFF; margin-top: 10px;">
-                                        {format_num(card['live_preis_fremd'], 4)} <span style="font-size: 0.9rem; color: #8A8F98; font-weight: 500;">{card['waehrung']}</span>
-                                    </div>
-                                    <div style="font-size: 1.1rem; font-weight: 600; color: {color}; margin-top: 2px;">
-                                        {format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)
-                                    </div>
-                                    <div style="margin-top: 15px; display: flex; justify-content: space-between; font-size: 0.9rem;">
-                                        <span style="color: #8A8F98; font-weight: 500;">Wert in CHF</span>
-                                        <span style="font-weight: 700; color: #FFFFFF;">{format_num(card['wert_aktuell_chf'])} CHF</span>
-                                    </div>
-                                    {fx_html}{div_html}{realized_html}
-                                </div>
-                                """.replace('\n', '')
+                                div_html = f"<div style='color:#F1C40F; font-size:0.8rem; font-weight:bold; margin-top:10px;'>💸 Dividenden: +{format_num(card['dividenden_chf'])} CHF</div>" if card['dividenden_chf'] > 0 else ""
                                 
+                                val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
+                                realized_html = f"<div style='color:{'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size:0.8rem; margin-top:4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
+
+                                # ---> LÜCKENLOSES HTML MIT NEUEM LOGO-LAYOUT <---
+                                html_card = (
+                                    f"<div class='asset-card'>"
+                                    f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:12px;'>"
+                                    f"<div style='display:flex; align-items:center; gap:8px;'>"
+                                    f"<span class='ticker-badge' style='margin:0;'>{card['ticker']}</span>"
+                                    f"<img src='{icon_url}' class='asset-icon'>"
+                                    f"</div>"
+                                    f"<div style='text-align:right;'>"
+                                    f"<span class='depot-badge' style='margin:0;'>{card['depot']}</span>"
+                                    f"</div>"
+                                    f"</div>"
+                                    f"<div style='font-size:0.85rem; color:#8A8F98; margin-bottom:2px; font-weight:500;'>Bestand: {format_num(card['menge'], 4)}</div>"
+                                    f"<div style='font-size:1.8rem; font-weight:700; line-height:1.2; color:#FFFFFF;'>{format_num(card['live_preis_fremd'], 4)} <span style='font-size:0.9rem; color:#8A8F98; font-weight:500;'>{card['waehrung']}</span></div>"
+                                    f"<div style='font-size:1.1rem; font-weight:600; color:{color}; margin-top:2px; padding-bottom:12px; border-bottom:1px solid rgba(255,255,255,0.05);'>{format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)</div>"
+                                    f"<div style='margin-top:12px; display:flex; justify-content:space-between; font-size:0.9rem;'><span style='color:#8A8F98; font-weight:500;'>Wert in CHF</span><span style='font-weight:700; color:#FFFFFF;'>{format_num(card['wert_aktuell_chf'])} CHF</span></div>"
+                                    f"{fx_html}{div_html}{realized_html}"
+                                    f"</div>"
+                                )
                                 st.markdown(html_card, unsafe_allow_html=True)
                                 
                                 df_depot_hist = df_trades[df_trades['depot'] == card['depot']]
@@ -645,6 +629,6 @@ def show_portfolio():
             c_h4.write(f"{format_num(val)} {row['waehrung']}")
             
             if c_h5.button("🗑️", key=f"del_global_hist_{row['id']}", help="Diesen Trade unwiderruflich löschen"):
-                delete_trade(row['id'])
+                delete_trade(row['id'], row['aktion'], row['menge'], row['ticker'], row['depot'], row['gebuehren'], row['datum'])
             st.markdown("<div style='margin-bottom: -15px;'></div>", unsafe_allow_html=True)
             st.divider()
