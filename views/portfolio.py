@@ -258,14 +258,15 @@ def show_entry_dialog():
                     st.error("Bitte fülle Ticker und Betrag aus.")
 
 def show_portfolio():
-    # CSS für das moderne Fintech-Design
+    # CSS für das moderne Fintech-Design mit neuen Flex-Regeln für das Icon
     st.markdown("""
         <style>
         .asset-card { background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 20px; margin-bottom: 15px; transition: all 0.3s ease; }
         .asset-card:hover { border-color: #2ECC71; background: rgba(46, 204, 113, 0.02); }
-        .asset-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .asset-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; }
         .ticker-badge { background: #2ECC71; color: black; padding: 2px 8px; border-radius: 4px; font-weight: bold; font-size: 0.8rem; }
-        .depot-badge { font-size: 0.75rem; color: #8A8F98; border: 1px solid #8A8F98; padding: 2px 6px; border-radius: 4px; }
+        .depot-badge { font-size: 0.75rem; color: #8A8F98; border: 1px solid #8A8F98; padding: 2px 6px; border-radius: 4px; margin-top: 6px; display: inline-block; }
+        .asset-icon { width: 38px; height: 38px; border-radius: 50%; object-fit: contain; background: white; padding: 3px; border: 2px solid rgba(255,255,255,0.1); }
         </style>
     """, unsafe_allow_html=True)
 
@@ -395,7 +396,6 @@ def show_portfolio():
                         'realisiert_chf': data['realisiert_chf']
                     })
 
-        # Totals pro Depot speichern (für den Filter später)
         depot_totals[depot_name] = {
             'investiert': depot_investiert,
             'aktuell': depot_aktuell,
@@ -408,14 +408,10 @@ def show_portfolio():
         global_gebuehren += depot_gebuehren
         global_realisiert += depot_realisiert
 
-    # --- TABS ---
     tab_dash, tab_assets, tab_hist = st.tabs(["📊 Dashboard & Analytics", "💼 Meine Bestände", "📜 Gesamthistorie"])
 
-    # --- TAB 1: DASHBOARD ---
     with tab_dash:
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
-        
-        # ---> NEU: Dynamischer Filter <---
         filter_options = ["Alle Depots"] + list(alle_depots)
         selected_depot_filter = st.radio("Ansicht filtern:", filter_options, horizontal=True)
         st.markdown("<div style='height: 15px;'></div>", unsafe_allow_html=True)
@@ -466,14 +462,12 @@ def show_portfolio():
         else:
             st.info(f"Keine aktiven Positionen für die Ansicht '{selected_depot_filter}'.")
 
-    # --- TAB 2: BESTÄNDE (NACH DEPOT GRUPPIERT) ---
     with tab_assets:
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         
         if not active_cards and not closed_cards:
             st.info("Aktuell keine Positionen im Depot.")
         else:
-            # ---> NEU: Iteration über jedes Depot separat <---
             for current_depot in alle_depots:
                 depot_active = [c for c in active_cards if c['depot'] == current_depot]
                 depot_closed = [c for c in closed_cards if c['depot'] == current_depot]
@@ -487,6 +481,12 @@ def show_portfolio():
                         for idx, card in enumerate(depot_active):
                             with cols[idx % 3]:
                                 color = "#2ECC71" if card['netto_gewinn'] >= 0 else "#FF6B6B"
+                                
+                                # ---> LOGO LOGIK: Basis-Kürzel extrahieren und Logo-Links generieren <---
+                                base_ticker = card['ticker'].split('-')[0].split('.')[0].upper()
+                                # Wir versuchen das offizielle Logo von CoinCap zu laden. Wenn es fehlt (404), generiert der Fallback ein Avatar-Icon.
+                                primary_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
+                                fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
                                 
                                 fx_html = ""
                                 if card['waehrung'] != "CHF":
@@ -504,7 +504,27 @@ def show_portfolio():
                                 val_verkauf = card['realisiert_chf'] - card['dividenden_chf']
                                 realized_html = f"<div style='color: {'#2ECC71' if val_verkauf >= 0 else '#FF6B6B'}; font-size: 0.8rem; margin-top: 4px;'>Realisiert (Verkauf): {format_num(val_verkauf, 2, True)} CHF</div>" if val_verkauf != 0 else ""
 
-                                html_card = f"""<div class="asset-card"><div class="asset-header"><div><span class="ticker-badge">{card['ticker']}</span></div><div style="text-align: right; color: gray; font-size: 0.85rem;">{format_num(card['menge'], 4)} Stück</div></div><div style="font-size: 1.6rem; font-weight: bold;">{format_num(card['live_preis_fremd'], 4)} <span style="font-size: 0.9rem; color: gray;">{card['waehrung']}</span></div><div style="font-size: 1.1rem; font-weight: bold; color: {color}; margin-top: 5px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">{format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)</div><div style="margin-top: 10px; display: flex; justify-content: space-between; font-size: 0.85rem;"><span style="color: gray;">Wert in CHF:</span><span style="font-weight: bold;">{format_num(card['wert_aktuell_chf'])} CHF</span></div>{fx_html}{div_html}{realized_html}</div>"""
+                                # ---> HTML KARTEN-AUFBAU MIT LOGO <---
+                                html_card = f"""
+                                <div class="asset-card">
+                                    <div class="asset-header">
+                                        <div style="display: flex; align-items: center; gap: 12px;">
+                                            <img src="{primary_icon}" onerror="this.onerror=null; this.src='{fallback_icon}';" class="asset-icon">
+                                            <div>
+                                                <div class="ticker-badge">{card['ticker']}</div>
+                                                <div class="depot-badge">{card['depot']}</div>
+                                            </div>
+                                        </div>
+                                        <div style="text-align: right; color: gray; font-size: 0.85rem; padding-top: 4px;">{format_num(card['menge'], 4)} Stück</div>
+                                    </div>
+                                    <div style="font-size: 1.6rem; font-weight: bold; margin-top: 10px;">{format_num(card['live_preis_fremd'], 4)} <span style="font-size: 0.9rem; color: gray;">{card['waehrung']}</span></div>
+                                    <div style="font-size: 1.1rem; font-weight: bold; color: {color}; margin-top: 5px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.05);">{format_num(card['netto_gewinn'], 2, True)} CHF ({format_num(card['gewinn_prozent'], 2, True)}%)</div>
+                                    <div style="margin-top: 10px; display: flex; justify-content: space-between; font-size: 0.85rem;"><span style="color: gray;">Wert in CHF:</span><span style="font-weight: bold;">{format_num(card['wert_aktuell_chf'])} CHF</span></div>
+                                    {fx_html}
+                                    {div_html}
+                                    {realized_html}
+                                </div>
+                                """
                                 st.markdown(html_card, unsafe_allow_html=True)
                                 
                                 df_depot_hist = df_trades[df_trades['depot'] == card['depot']]
@@ -521,7 +541,6 @@ def show_portfolio():
 
                     st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
 
-    # --- TAB 3: GESAMTHISTORIE ---
     with tab_hist:
         st.markdown("<div style='height: 10px;'></div>", unsafe_allow_html=True)
         st.markdown("#### Logbuch aller Transaktionen")
