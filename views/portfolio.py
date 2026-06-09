@@ -36,6 +36,7 @@ def get_portfolio_asset_icon(ticker):
         'GEBN': 'geberit.com',
         'KNIN': 'kuehne-nagel.com',
         'SUNN': 'sunrise.ch',
+        'FUW50': 'fuw.ch',       # ---> NEU: Das offizielle Logo für den FuW Swiss 50 ETP!
         'AAPL': 'apple.com',
         'MSFT': 'microsoft.com',
         'TSLA': 'tesla.com',
@@ -44,13 +45,13 @@ def get_portfolio_asset_icon(ticker):
         'GOOGL': 'google.com',
         'META': 'meta.com',
         'NVDA': 'nvidia.com',
-        'INTC': 'intel.com',     # ---> NEU: Intel Logo hier hinzugefügt!
+        'INTC': 'intel.com',
         'V': 'visa.com',
         'JNJ': 'jnj.com',
         'MA': 'mastercard.com'
     }
     
-    # 1. Wenn Aktie bekannt, lade das Logo über Googles Favicon-Dienst
+    # 1. Wenn Aktie/ETP bekannt, lade das Logo über Googles Favicon-Dienst
     if base_ticker in stock_domains:
         return f"https://www.google.com/s2/favicons?sz=128&domain={stock_domains[base_ticker]}"
         
