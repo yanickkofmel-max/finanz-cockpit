@@ -15,10 +15,9 @@ def get_portfolio_asset_icon(ticker):
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
     # 1. Unsere Logo-Datenbank
-    # Tipp: Wenn Google bei einer Website eine blaue Kugel liefert, kannst du ab sofort auch einfach einen direkten 'https://...'-Bildlink eintragen!
     stock_domains = {
         'NOVN': 'novartis.com',
-        'ZURN': 'https://logo.clearbit.com/zurich.com',  # ---> FIX: Direkter Override für Zurich!
+        'ZURN': 'https://logo.clearbit.com/zurich.ch',  # ---> FIX: Jetzt mit der exakten Schweizer Domain!
         'SREN': 'swissre.com',
         'SLHN': 'swisslife.com',
         'ROG': 'roche.com',
