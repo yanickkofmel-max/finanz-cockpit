@@ -17,7 +17,7 @@ def get_portfolio_asset_icon(ticker):
     # 1. Unsere Logo-Datenbank
     stock_domains = {
         'NOVN': 'novartis.com',
-        'ZURN': 'https://logo.clearbit.com/zurich.ch',  # ---> FIX: Jetzt mit der exakten Schweizer Domain!
+        'ZURN': 'https://logo.clearbit.com/zurich.com',  # ---> FIX: Die globale Domain liefert das offizielle "Z"-Logo!
         'SREN': 'swissre.com',
         'SLHN': 'swisslife.com',
         'ROG': 'roche.com',
@@ -57,7 +57,7 @@ def get_portfolio_asset_icon(ticker):
     # URL bestimmen
     if base_ticker in stock_domains:
         val = stock_domains[base_ticker]
-        # Wenn es ein direkter Bild-Link ist, nutze diesen. Ansonsten frage Google.
+        # Wenn es ein direkter Bild-Link ist (wie bei Zurich), nutze diesen. Ansonsten frage Google Favicons.
         if val.startswith("http"):
             return val
         return f"https://www.google.com/s2/favicons?sz=128&domain={val}"
@@ -72,7 +72,7 @@ def get_portfolio_asset_icon(ticker):
     except Exception:
         pass
         
-    # 3. Fallback auf die Initialen
+    # 3. Fallback auf die Initialen, falls absolut nichts gefunden wurde
     return fallback_icon
 
 
