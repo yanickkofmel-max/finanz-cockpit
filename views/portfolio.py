@@ -14,9 +14,11 @@ def get_portfolio_asset_icon(ticker):
     base_ticker = ticker.split('-')[0].split('.')[0].upper().strip()
     fallback_icon = f"https://ui-avatars.com/api/?name={base_ticker}&background=2b2b36&color=2ECC71&rounded=true&bold=true"
     
+    # 1. Unsere Logo-Datenbank
+    # Tipp: Wenn Google bei einer Website eine blaue Kugel liefert, kannst du ab sofort auch einfach einen direkten 'https://...'-Bildlink eintragen!
     stock_domains = {
         'NOVN': 'novartis.com',
-        'ZURN': 'zurich.com',
+        'ZURN': 'https://logo.clearbit.com/zurich.com',  # ---> FIX: Direkter Override für Zurich!
         'SREN': 'swissre.com',
         'SLHN': 'swisslife.com',
         'ROG': 'roche.com',
@@ -36,7 +38,9 @@ def get_portfolio_asset_icon(ticker):
         'GEBN': 'geberit.com',
         'KNIN': 'kuehne-nagel.com',
         'SUNN': 'sunrise.ch',
-        'FUW50': 'fuw.ch',       # ---> NEU: Das offizielle Logo für den FuW Swiss 50 ETP!
+        'FUW50': 'fuw.ch',
+        'FWRA': 'invesco.com',
+        'FWIA': 'invesco.com',
         'AAPL': 'apple.com',
         'MSFT': 'microsoft.com',
         'TSLA': 'tesla.com',
@@ -51,9 +55,13 @@ def get_portfolio_asset_icon(ticker):
         'MA': 'mastercard.com'
     }
     
-    # 1. Wenn Aktie/ETP bekannt, lade das Logo über Googles Favicon-Dienst
+    # URL bestimmen
     if base_ticker in stock_domains:
-        return f"https://www.google.com/s2/favicons?sz=128&domain={stock_domains[base_ticker]}"
+        val = stock_domains[base_ticker]
+        # Wenn es ein direkter Bild-Link ist, nutze diesen. Ansonsten frage Google.
+        if val.startswith("http"):
+            return val
+        return f"https://www.google.com/s2/favicons?sz=128&domain={val}"
         
     # 2. Wenn nicht in der Liste, versuche Krypto-Logo über CoinCap
     crypto_icon = f"https://assets.coincap.io/assets/icons/{base_ticker.lower()}@2x.png"
@@ -623,7 +631,7 @@ def show_portfolio():
                                     f"<div style='display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:12px;'>"
                                     f"<div style='display:flex; align-items:center; gap:8px;'>"
                                     f"<span class='ticker-badge' style='margin:0;'>{card['ticker']}</span>"
-                                    f"<img src='{icon_url}' class='asset-icon'>"
+                                    f"<img src='{icon_url}' onerror=\"this.onerror=null; this.src='https://ui-avatars.com/api/?name={card['ticker'].split('-')[0].split('.')[0]}&background=2b2b36&color=2ECC71&rounded=true&bold=true';\" class='asset-icon'>"
                                     f"</div>"
                                     f"<div style='text-align:right;'>"
                                     f"<span class='depot-badge' style='margin:0;'>{card['depot']}</span>"
