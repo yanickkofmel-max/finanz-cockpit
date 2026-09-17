@@ -1,49 +1,18 @@
 import streamlit as st
-from datetime import datetime
 import os
 
-# --- 0. BASIS-KONFIGURATION (Muss zwingend als allererstes stehen!) ---
-st.set_page_config(layout="wide", page_title="Finanz-Cockpit")
-
-# --- 1. DATENBANK-SYNC BEIM START (NUR EINMALIG!) ---
-from utils.drive_sync import download_db, upload_db
-
-# Verwende den Session State, damit der Download NUR BEIM ERSTEN START läuft
-if "db_initial_loaded" not in st.session_state:
-    with st.spinner("Lade aktuellsten Stand aus Google Drive..."):
-        versuch = download_db()
-        if versuch == False:
-            st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
-        else:
-            st.session_state["db_initial_loaded"] = True
-
-# Datenbank initialisieren (Nutzt ab jetzt die lokale Datei)
-from db_manager import init_db, get_connection
-init_db()
-
-# Konfiguration und Design-Funktionen importieren
-from config import MONATE_MAP
-from theme import apply_banking_styles
-
-# Die Ansichten importieren
-from views.dashboard import show_dashboard
-from views.lohnkonten import show_lohnkonten
-from views.vermoegen import show_vermoegen
-from views.konten_verwaltung import show_konten_verwaltung
-from views.nebenkosten import show_nebenkosten
-from views.portfolio import show_portfolio  # <--- DIESE ZEILE NEU HINZUFÜGEN
+# --- 1. BASIS-KONFIGURATION ---
+st.set_page_config(layout="wide", page_title="Portfolio-Cockpit")
 
 # --- 2. SESSION STATES INITIALISIEREN ---
 if "auth" not in st.session_state: 
     st.session_state["auth"] = False
-if 'view' not in st.session_state: 
-    st.session_state.view = 'dashboard'
 
-# --- 3. MODERNES LOGIN GATE (Design übernommen & angepasst, ohne Logo) ---
+# --- 3. MODERNES LOGIN GATE ---
 if not st.session_state["auth"]:
     st.markdown("""
         <style>
-            /* 1. FLEXIBLER HINTERGRUND (Wechselt automatisch bei Light/Dark Mode) */
+            /* 1. FLEXIBLER HINTERGRUND */
             .stApp {
                 background-color: var(--background-color);
             }
@@ -83,7 +52,7 @@ if not st.session_state["auth"]:
                 text-transform: uppercase;
             }
 
-            /* 3. MINIMALISTISCHE EINGABEFELDER (Unterstrich statt Rahmen) */
+            /* 3. MINIMALISTISCHE EINGABEFELDER */
             div[data-baseweb="input"] {
                 background-color: transparent !important;
                 border: none !important;
@@ -140,7 +109,8 @@ if not st.session_state["auth"]:
 
     with center_col:
         st.markdown('<div class="login-section">', unsafe_allow_html=True)
-        st.markdown('<div class="brand-title">FINANZ</div>', unsafe_allow_html=True)
+        # Titel leicht angepasst auf Portfolio
+        st.markdown('<div class="brand-title">PORTFOLIO</div>', unsafe_allow_html=True)
         st.markdown('<div class="brand-subtitle">Cockpit</div>', unsafe_allow_html=True)
         
         with st.form("login_gate", border=False):
@@ -155,68 +125,38 @@ if not st.session_state["auth"]:
                     st.error("Zugriff verweigert")
         
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    # WICHTIG: Stoppt das Skript, wenn man nicht eingeloggt ist!
     st.stop() 
 
-# --- 4. HAUPTPROGRAMM (Nur sichtbar, wenn auth == True) ---
+
+# --- 4. DATENBANK-SYNC BEIM START (NUR EINMALIG!) ---
+from utils.drive_sync import download_db, upload_db
+
+if "db_initial_loaded" not in st.session_state:
+    with st.spinner("Lade aktuellsten Stand aus Google Drive..."):
+        versuch = download_db()
+        if not versuch:
+            st.error("ACHTUNG: Datenbank konnte nicht von Google Drive geladen werden!")
+        else:
+            st.session_state["db_initial_loaded"] = True
+
+# Datenbank initialisieren
+from db_manager import init_db, get_connection
+init_db()
+
+from theme import apply_banking_styles
+from portfolio import show_portfolio 
+
+# --- 5. HAUPTPROGRAMM (Nur sichtbar, wenn auth == True) ---
 apply_banking_styles()
-
-def reset_ansicht():
-    st.session_state.view = 'dashboard'
-
-# Dynamisches Laden der Konten
-def get_konten_von_db(typ):
-    conn = get_connection()
-    try:
-        konten = [row[0] for row in conn.execute("SELECT name FROM konten WHERE typ=?", (typ,)).fetchall()]
-    except:
-        konten = []
-    conn.close()
-    return konten
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🧭 Finanz-Cockpit")
-    st.markdown("#### Navigation")
-    
-    nav_options = {
-        "📊 Dashboard": "Dashboard",
-        "💳 Lohnkonten": "Lohnkonten",
-        "📈 Vermögen": "Vermögen",
-        "🛒 Nebenkosten": "Nebenkosten",
-        "⚙️ Konten-Verwaltung": "Konten-Verwaltung", # <--- KOMMA NICHT VERGESSEN!
-        "🚀 Aktien & Krypto": "Portfolio"            # <--- DIESE ZEILE NEU HINZUFÜGEN
-    }
-
-    auswahl_anzeige = st.radio(
-        "Bereich wählen", 
-        list(nav_options.keys()),
-        label_visibility="collapsed",
-        on_change=reset_ansicht
-    )
-    bereich = nav_options[auswahl_anzeige]
-
+    st.title("🚀 Portfolio-Cockpit")
+    st.markdown("Dein Aktien & Krypto Tracker")
     st.divider()
     
-    # 1. Zeitraum Darstellung
-    st.markdown("#### 📅 Zeitraum")
-    col1, col2 = st.columns(2)
-    akt_monat_index = datetime.now().month - 1
-    
-    with col2:
-        ausgewaehltes_jahr = st.selectbox("Jahr", [2024, 2025, 2026, 2027], index=2, label_visibility="collapsed")
-        
-    with col1:
-        # Wir hängen "Gesamtes Jahr" an das Ende der Auswahlliste an
-        monat_optionen = list(MONATE_MAP.keys()) + ["Gesamtes Jahr"]
-        ausgewaehlter_monat_name = st.selectbox("Monat", monat_optionen, index=akt_monat_index, label_visibility="collapsed")
-
-    # Signal für das gesamte Jahr oder einen einzelnen Monat generieren
-    if ausgewaehlter_monat_name == "Gesamtes Jahr":
-        globaler_monat = f"{ausgewaehltes_jahr}-ALL"
-    else:
-        globaler_monat = f"{ausgewaehltes_jahr}-{MONATE_MAP[ausgewaehlter_monat_name]}"
-    
-    # 2. Daten-Management
     st.markdown("#### ☁️ Daten-Management")
     
     # Backup Button (Lokal)
@@ -226,7 +166,7 @@ with st.sidebar:
             st.download_button(
                 label="💾 Backup (Lokal)",
                 data=f,
-                file_name="finanzen_backup.db",
+                file_name="portfolio_backup.db",
                 mime="application/x-sqlite3",
                 use_container_width=True
             )
@@ -247,16 +187,5 @@ with st.sidebar:
         st.session_state["auth"] = False
         st.rerun()
 
-# --- ROUTING ---
-if bereich == "Dashboard":
-    show_dashboard(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
-elif bereich == "Lohnkonten":
-    show_lohnkonten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
-elif bereich == "Vermögen":
-    show_vermoegen(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
-elif bereich == "Nebenkosten":
-    show_nebenkosten(ausgewaehlter_monat_name, ausgewaehltes_jahr, globaler_monat)
-elif bereich == "Konten-Verwaltung":
-    show_konten_verwaltung()
-elif bereich == "Portfolio":         # <--- DIESE ZEILE NEU
-    show_portfolio()                 # <--- DIESE ZEILE NEU
+# --- ROUTING (Direkter Aufruf des Portfolios) ---
+show_portfolio()
