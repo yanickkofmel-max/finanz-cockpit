@@ -17,7 +17,7 @@ def get_portfolio_asset_icon(ticker):
     # 1. Unsere Logo-Datenbank
     stock_domains = {
         'NOVN': 'novartis.com',
-        'ZURN': 'https://logo.clearbit.com/zurich.com',  # ---> FIX: Die globale Domain liefert das offizielle "Z"-Logo!
+        'ZURN': 'https://logo.clearbit.com/zurich.com',
         'SREN': 'swissre.com',
         'SLHN': 'swisslife.com',
         'ROG': 'roche.com',
@@ -57,7 +57,6 @@ def get_portfolio_asset_icon(ticker):
     # URL bestimmen
     if base_ticker in stock_domains:
         val = stock_domains[base_ticker]
-        # Wenn es ein direkter Bild-Link ist (wie bei Zurich), nutze diesen. Ansonsten frage Google Favicons.
         if val.startswith("http"):
             return val
         return f"https://www.google.com/s2/favicons?sz=128&domain={val}"
@@ -72,7 +71,7 @@ def get_portfolio_asset_icon(ticker):
     except Exception:
         pass
         
-    # 3. Fallback auf die Initialen, falls absolut nichts gefunden wurde
+    # 3. Fallback auf die Initialen
     return fallback_icon
 
 
@@ -553,18 +552,94 @@ def show_portfolio():
             dash_realized = depot_totals[selected_depot_filter]['realisiert']
             filtered_cards = [c for c in active_cards if c['depot'] == selected_depot_filter]
 
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Investiert (Aktiv)", f"{format_num(dash_invest)} CHF")
-        c2.metric("Aktueller Wert (Aktiv)", f"{format_num(dash_aktuell)} CHF")
-        
+        # --- NEUES MODERNES DASHBOARD DESIGN START ---
         dash_netto_chf = dash_aktuell - dash_invest - dash_geb
         dash_perf_prozent = (dash_netto_chf / dash_invest * 100) if dash_invest > 0 else 0
         
-        c3.metric("Buchgewinn (Laufend)", f"{format_num(dash_netto_chf, 2, True)} CHF", f"{format_num(dash_perf_prozent, 2, True)}%")
-        c4.metric("Realisiert (Verkauf+Div.)", f"{format_num(dash_realized, 2, True)} CHF")
+        color_perf = "#2ECC71" if dash_netto_chf >= 0 else "#FF6B6B"
+        sign_perf = "+" if dash_netto_chf > 0 else ""
         
-        st.markdown("<div style='height: 20px;'></div>", unsafe_allow_html=True)
+        color_realized = "#2ECC71" if dash_realized >= 0 else "#FF6B6B"
+        sign_realized = "+" if dash_realized > 0 else ""
+
+        st.markdown("""
+            <style>
+            .kpi-box {
+                background: linear-gradient(145deg, rgba(30,30,40,0.6) 0%, rgba(20,20,30,0.8) 100%);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 12px;
+                padding: 20px 10px;
+                text-align: center;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.15);
+                transition: transform 0.2s;
+            }
+            .kpi-box:hover {
+                transform: translateY(-2px);
+                border-color: rgba(255, 255, 255, 0.15);
+            }
+            .kpi-title {
+                color: #8A8F98;
+                font-size: 0.85rem;
+                text-transform: uppercase;
+                letter-spacing: 1px;
+                margin-bottom: 8px;
+                font-weight: 600;
+            }
+            .kpi-value {
+                font-size: 2rem;
+                font-weight: 800;
+                color: #FFFFFF;
+                margin-bottom: 5px;
+                letter-spacing: -0.5px;
+            }
+            .kpi-sub {
+                font-size: 1.05rem;
+                font-weight: 600;
+            }
+            </style>
+        """, unsafe_allow_html=True)
+
+        c1, c2, c3, c4 = st.columns(4)
         
+        with c1:
+            st.markdown(f"""
+                <div class="kpi-box" style="border-bottom: 3px solid #58a6ff;">
+                    <div class="kpi-title">Aktueller Wert</div>
+                    <div class="kpi-value">{format_num(dash_aktuell)} <span style="font-size:1rem; color:#8A8F98;">CHF</span></div>
+                    <div class="kpi-sub" style="color: #8A8F98;">Aktiv im Markt</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with c2:
+            st.markdown(f"""
+                <div class="kpi-box">
+                    <div class="kpi-title">Total Investiert</div>
+                    <div class="kpi-value">{format_num(dash_invest)} <span style="font-size:1rem; color:#8A8F98;">CHF</span></div>
+                    <div class="kpi-sub" style="color: #8A8F98;">+ {format_num(dash_geb)} CHF Gebühren</div>
+                </div>
+            """, unsafe_allow_html=True)
+
+        with c3:
+            st.markdown(f"""
+                <div class="kpi-box" style="border-bottom: 3px solid {color_perf}; background: rgba({ '46, 204, 113' if dash_netto_chf >= 0 else '255, 107, 107' }, 0.05);">
+                    <div class="kpi-title">Buchgewinn / Verlust</div>
+                    <div class="kpi-value" style="color: {color_perf};">{sign_perf}{format_num(dash_netto_chf, 2, True)} <span style="font-size:1rem;">CHF</span></div>
+                    <div class="kpi-sub" style="color: {color_perf};">{sign_perf}{format_num(dash_perf_prozent, 2, True)} %</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        with c4:
+            st.markdown(f"""
+                <div class="kpi-box">
+                    <div class="kpi-title">Realisiert (Cash)</div>
+                    <div class="kpi-value" style="color: {color_realized};">{sign_realized}{format_num(dash_realized, 2, True)} <span style="font-size:1rem;">CHF</span></div>
+                    <div class="kpi-sub" style="color: #8A8F98;">Verkäufe & Dividenden</div>
+                </div>
+            """, unsafe_allow_html=True)
+            
+        st.markdown("<div style='height: 30px;'></div>", unsafe_allow_html=True)
+        # --- NEUES MODERNES DASHBOARD DESIGN ENDE ---
+
         if filtered_cards:
             df_plot = pd.DataFrame(filtered_cards)
             c_left, c_right = st.columns(2)
